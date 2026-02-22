@@ -149,19 +149,14 @@ export const sanitizeTextForAiPrompt = (raw: string) => {
 };
 
 const normalizeReaderLayoutText = (raw: string) => {
-  const normalizedText = sanitizeTextForAiPrompt(raw).replace(/\r\n/g, '\n').trim();
+  const normalizedText = sanitizeTextForAiPrompt(raw)
+    .replace(/\r\n?/g, '\n')
+    .replace(/[\u2028\u2029\u0085]/g, '\n')
+    .trim();
   if (!normalizedText) return '';
 
-  const splitByBlankLine = normalizedText
-    .split(/\n{2,}/)
-    .map((paragraph) => paragraph.trim())
-    .filter(Boolean);
-  if (splitByBlankLine.length > 1) {
-    return splitByBlankLine.join('\n');
-  }
-
   return normalizedText
-    .split('\n')
+    .split(/\n+/)
     .map((paragraph) => paragraph.trim())
     .filter(Boolean)
     .join('\n');

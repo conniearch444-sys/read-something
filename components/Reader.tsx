@@ -261,18 +261,17 @@ const getDefaultReaderTypography = (darkMode: boolean): ReaderTypographyStyle =>
 });
 
 const splitReaderParagraphs = (raw: string) => {
-  const normalizedText = raw.replace(/\r\n/g, '\n').trim();
+  const normalizedText = raw
+    .replace(/\r\n?/g, '\n')
+    .replace(/[\u2028\u2029\u0085]/g, '\n')
+    .trim();
   if (!normalizedText) return [] as string[];
 
-  const splitByBlankLine = normalizedText
-    .split(/\n{2,}/)
-    .map(p => p.trim())
-    .filter(Boolean);
-  if (splitByBlankLine.length > 1) return splitByBlankLine;
-
+  // Always split by line breaks after normalization so in-text newlines
+  // won't collapse into visual spaces inside a single <p>.
   return normalizedText
-    .split('\n')
-    .map(p => p.trim())
+    .split(/\n+/)
+    .map((paragraph) => paragraph.trim())
     .filter(Boolean);
 };
 
