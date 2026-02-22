@@ -420,6 +420,62 @@ const appendReadingDurationForBook = (
   };
 };
 
+const normalizeChapterBlocksForCompare = (blocks: Chapter['blocks'] | undefined) =>
+  Array.isArray(blocks) ? blocks : [];
+
+const areChapterBlocksEqual = (left: Chapter['blocks'] | undefined, right: Chapter['blocks'] | undefined) => {
+  const leftBlocks = normalizeChapterBlocksForCompare(left);
+  const rightBlocks = normalizeChapterBlocksForCompare(right);
+  if (leftBlocks.length !== rightBlocks.length) return false;
+
+  for (let index = 0; index < leftBlocks.length; index += 1) {
+    const leftBlock = leftBlocks[index];
+    const rightBlock = rightBlocks[index];
+    if (leftBlock.type !== rightBlock.type) return false;
+
+    if (leftBlock.type === 'text') {
+      if (rightBlock.type !== 'text') return false;
+      if (leftBlock.text !== rightBlock.text) return false;
+      continue;
+    }
+
+    if (rightBlock.type !== 'image') return false;
+    if (leftBlock.imageRef !== rightBlock.imageRef) return false;
+    if ((leftBlock.alt || '') !== (rightBlock.alt || '')) return false;
+    if ((leftBlock.title || '') !== (rightBlock.title || '')) return false;
+    if ((leftBlock.width ?? null) !== (rightBlock.width ?? null)) return false;
+    if ((leftBlock.height ?? null) !== (rightBlock.height ?? null)) return false;
+  }
+
+  return true;
+};
+
+const areChaptersEqual = (left: Chapter[] | undefined, right: Chapter[] | undefined) => {
+  const leftChapters = Array.isArray(left) ? left : [];
+  const rightChapters = Array.isArray(right) ? right : [];
+  if (leftChapters.length !== rightChapters.length) return false;
+
+  for (let index = 0; index < leftChapters.length; index += 1) {
+    const leftChapter = leftChapters[index];
+    const rightChapter = rightChapters[index];
+    if ((leftChapter.title || '') !== (rightChapter.title || '')) return false;
+    if ((leftChapter.content || '') !== (rightChapter.content || '')) return false;
+    if (!areChapterBlocksEqual(leftChapter.blocks, rightChapter.blocks)) return false;
+  }
+
+  return true;
+};
+
+const hasBookTextOrChaptersChanged = (
+  previousFullText: string,
+  previousChapters: Chapter[] | undefined,
+  nextFullText: string,
+  nextChapters: Chapter[] | undefined,
+) => {
+  if (previousFullText !== nextFullText) return true;
+  return !areChaptersEqual(previousChapters, nextChapters);
+};
+
 const getMostRecentBook = (books: Book[]) => {
   const candidates = books.filter((book) => typeof book.lastReadAt === 'number' && book.lastReadAt > 0);
   if (candidates.length === 0) return null;
@@ -1978,6 +2034,11 @@ const App: React.FC = () => {
     const previousBook = books.find((book) => book.id === updatedBook.id);
     const reached100Now = updatedBook.progress >= 100 && (previousBook?.progress || 0) < 100;
     const previousStoredContent = await getBookContent(updatedBook.id).catch(() => null);
+    const previousFullText = previousStoredContent?.fullText || previousBook?.fullText || '';
+    const previousChapters = previousStoredContent?.chapters || previousBook?.chapters || [];
+    const textOrChapterChanged = hasBookTextOrChaptersChanged(previousFullText, previousChapters, fullText, chapters);
+    const ragJustEnabled = Boolean(updatedBook.ragEnabled && !previousBook?.ragEnabled);
+    const shouldWarmupAfterSave = Boolean(updatedBook.ragEnabled && (textOrChapterChanged || ragJustEnabled));
     const previousImageRefs = new Set<string>();
     const nextImageRefs = new Set<string>();
 
@@ -1993,6 +2054,20 @@ const App: React.FC = () => {
       await saveBookContent(updatedBook.id, fullText, chapters);
       const compacted = compactBookForState({ ...updatedBook, fullText, chapters });
       setBooks(prev => prev.map(b => (b.id === updatedBook.id ? compacted : b)));
+
+      if (textOrChapterChanged) {
+        try {
+          const { deleteEmbeddingsByBook } = await import('./utils/ragEngine');
+          await deleteEmbeddingsByBook(updatedBook.id);
+        } catch (error) {
+          console.error('Failed to clear stale RAG index after content update:', error);
+        }
+      }
+
+      if (shouldWarmupAfterSave) {
+        warmupRagForBook(compacted, 'upload');
+      }
+
       if (updatedBook.progress >= 100) {
         setCompletedBookIds(prev => (prev.includes(updatedBook.id) ? prev : [...prev, updatedBook.id]));
         if (reached100Now) {

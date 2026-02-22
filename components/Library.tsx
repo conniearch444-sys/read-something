@@ -1001,57 +1001,55 @@ const Library: React.FC<LibraryProps> = ({
     const structuredChapterMode = getStructuredChapterMode(isEdit);
     return (
       <div className="overflow-y-auto no-scrollbar flex-1 -mx-2 px-2 space-y-5 pb-4">
-        {!isEdit && (
-          <div className={`p-4 rounded-xl space-y-3 ${isDarkMode ? 'bg-black/20' : 'bg-slate-100/50'}`}>
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                <FileUp size={14} /> 导入文本 (TXT / WORD / PDF / EPUB)
-              </label>
-              <span className="text-[10px] text-slate-400">{book.fullText ? '已加载内容' : '未选择'}</span>
-            </div>
-            {!txtFileUrlMode ? (
-              <div className="flex gap-2">
-                <button
-                  onClick={() => txtFileInputRef.current?.click()}
-                  className={`flex-1 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 ${btnClass} text-slate-500 hover:text-rose-400`}
-                >
-                  <FileText size={12} /> 本地文件
-                </button>
-                <input
-                  type="file"
-                  ref={txtFileInputRef}
-                  className="hidden"
-                  accept={BOOK_IMPORT_ACCEPT}
-                  onChange={handleBookFileSelect}
-                />
-
-                <button
-                  onClick={() => setTxtFileUrlMode(true)}
-                  className={`flex-1 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 ${btnClass} text-slate-500 hover:text-rose-400`}
-                >
-                  <Link size={12} /> 网络链接
-                </button>
-              </div>
-            ) : (
-              <div className="w-full flex gap-2 app-view-enter-left">
-                <input
-                  type="text"
-                  value={tempTxtUrl}
-                  onChange={(e) => setTempTxtUrl(e.target.value)}
-                  placeholder="输入文件链接..."
-                  className={`flex-1 px-3 py-1.5 text-xs rounded-lg outline-none ${inputClass}`}
-                />
-                <button onClick={handleTxtUrlSubmit} className="text-rose-400"><Check size={16} /></button>
-                <button onClick={() => setTxtFileUrlMode(false)} className="text-slate-400"><X size={16} /></button>
-              </div>
-            )}
-            {book.fullText && (
-              <div className="text-[10px] text-emerald-500 flex items-center gap-1">
-                <Check size={10} /> 内容已加载 ({book.fullText.length} 字符)
-              </div>
-            )}
+        <div className={`p-4 rounded-xl space-y-3 ${isDarkMode ? 'bg-black/20' : 'bg-slate-100/50'}`}>
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+              <FileUp size={14} /> 导入文本 (TXT / WORD / PDF / EPUB)
+            </label>
+            <span className="text-[10px] text-slate-400">{book.fullText ? '已加载内容' : '未选择'}</span>
           </div>
-        )}
+          {!txtFileUrlMode ? (
+            <div className="flex gap-2">
+              <button
+                onClick={() => txtFileInputRef.current?.click()}
+                className={`flex-1 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 ${btnClass} text-slate-500 hover:text-rose-400`}
+              >
+                <FileText size={12} /> 本地文件
+              </button>
+              <input
+                type="file"
+                ref={txtFileInputRef}
+                className="hidden"
+                accept={BOOK_IMPORT_ACCEPT}
+                onChange={handleBookFileSelect}
+              />
+
+              <button
+                onClick={() => setTxtFileUrlMode(true)}
+                className={`flex-1 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 ${btnClass} text-slate-500 hover:text-rose-400`}
+              >
+                <Link size={12} /> 网络链接
+              </button>
+            </div>
+          ) : (
+            <div className="w-full flex gap-2 app-view-enter-left">
+              <input
+                type="text"
+                value={tempTxtUrl}
+                onChange={(e) => setTempTxtUrl(e.target.value)}
+                placeholder="输入文件链接..."
+                className={`flex-1 px-3 py-1.5 text-xs rounded-lg outline-none ${inputClass}`}
+              />
+              <button onClick={handleTxtUrlSubmit} className="text-rose-400"><Check size={16} /></button>
+              <button onClick={() => setTxtFileUrlMode(false)} className="text-slate-400"><X size={16} /></button>
+            </div>
+          )}
+          {book.fullText && (
+            <div className="text-[10px] text-emerald-500 flex items-center gap-1">
+              <Check size={10} /> 内容已加载 ({book.fullText.length} 字符)
+            </div>
+          )}
+        </div>
 
         <div className="space-y-1">
           <div className="flex justify-between items-center mb-1">

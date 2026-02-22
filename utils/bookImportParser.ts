@@ -122,9 +122,24 @@ const getFileSuffix = (name: string) => {
 
 const compactWhitespace = (value: string) => value.replace(/[ \t\u00A0]+/g, ' ').trim();
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+const LATIN_APOSTROPHE_NORMALIZE_REGEX = /([A-Za-z0-9])[\u2018\u2019\u02BC]([A-Za-z0-9])/g;
+const LATIN_OPEN_QUOTE_NORMALIZE_REGEX = /(^|[\s([{<])[\u201C\u201D]([A-Za-z0-9])/g;
+const LATIN_CLOSE_QUOTE_NORMALIZE_REGEX = /([A-Za-z0-9])[\u201C\u201D](?=($|[\s)\]}>.,!?;:]))/g;
+const LATIN_CLOSE_QUOTE_AFTER_PUNCT_REGEX = /([A-Za-z0-9][A-Za-z0-9'"-]*[.,!?;:])[\u201C\u201D](?=($|[\s)\]}>]))/g;
+const LATIN_FULLWIDTH_SPACE_NORMALIZE_REGEX = /([A-Za-z0-9])[\u3000\u00A0]+([A-Za-z0-9])/g;
+
+const normalizeLatinTypographyArtifacts = (raw: string) =>
+  raw
+    .replace(/\uFF02/g, '"')
+    .replace(/\uFF07/g, "'")
+    .replace(LATIN_APOSTROPHE_NORMALIZE_REGEX, "$1'$2")
+    .replace(LATIN_OPEN_QUOTE_NORMALIZE_REGEX, '$1"$2')
+    .replace(LATIN_CLOSE_QUOTE_NORMALIZE_REGEX, '$1"')
+    .replace(LATIN_CLOSE_QUOTE_AFTER_PUNCT_REGEX, '$1"')
+    .replace(LATIN_FULLWIDTH_SPACE_NORMALIZE_REGEX, '$1 $2');
 
 const normalizeTextBlock = (raw: string) => {
-  const normalized = raw
+  const normalized = normalizeLatinTypographyArtifacts(raw)
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n')
     .replace(/\u00A0/g, ' ')

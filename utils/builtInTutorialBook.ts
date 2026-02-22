@@ -12,7 +12,7 @@ import {
 
 export const BUILT_IN_TUTORIAL_BOOK_ID = '__built_in_tutorial__';
 /** Bump this number whenever tutorial content is changed so existing users get the update. */
-export const BUILT_IN_TUTORIAL_VERSION = 3.1;
+export const BUILT_IN_TUTORIAL_VERSION = 3.3;
 
 const TUTORIAL_UNREAD_KEY = '__built_in_tutorial_unread__';
 export const isTutorialUnread = (): boolean => {
@@ -31,6 +31,39 @@ const text = (t: string): ReaderContentBlock => ({ type: 'text', text: t });
 const img = (imageRef: string, alt: string, w?: number, h?: number): ReaderContentBlock => ({
   type: 'image', imageRef, alt, width: w, height: h,
 });
+
+/* ------------------------------------------------------------------ */
+/*  更新记录                                                            */
+/* ------------------------------------------------------------------ */
+const CH0_CONTENT = `更新记录
+
+-更新时间：2026.02.23
+
+本次更新内容：
+
+1.TTS 板块功能完善
+阅读页已支持段落级 TTS 生成功能：可从当前位置开始朗读、暂停/继续、停止播放；支持按段落缓存音频并在需要时单段刷新重生成，减少重复请求等待；新增多平台 TTS API 预设，语速/语言切换。
+
+2.修正书籍文本分段渲染
+修复了 txt 文件编辑页预览换行正常，但阅读页被渲染成长空格的问题。
+
+3.优化章节标题渲染
+将章节标题加粗居中。`;
+
+const CH0_BLOCKS: ReaderContentBlock[] = [
+  text('更新记录'),
+  text(`-更新时间：2026.02.23`),
+  text(`本次更新内容：
+
+1.TTS 板块功能完善
+阅读页已支持段落级 TTS 生成功能：可从当前位置开始朗读、暂停/继续、停止播放；支持按段落缓存音频并在需要时单段刷新重生成，减少重复请求等待；新增多平台 TTS API 预设，语速/语言切换。
+
+2.修正书籍文本分段渲染
+修复了 txt 文件编辑页预览换行正常，但阅读页被渲染成长空格的问题。
+
+3.优化章节标题渲染
+将章节标题加粗居中。`),
+];
 
 /* ------------------------------------------------------------------ */
 /*  第一章 快速开始                                                     */
@@ -455,6 +488,7 @@ const CH6_BLOCKS: ReaderContentBlock[] = [
 /*  组装章节                                                            */
 /* ------------------------------------------------------------------ */
 const TUTORIAL_CHAPTERS: Chapter[] = [
+  { title: '更新记录', content: CH0_CONTENT, blocks: CH0_BLOCKS },
   { title: '第一章 快速开始', content: CH1_CONTENT, blocks: CH1_BLOCKS },
   { title: '第二章 书架', content: CH2_CONTENT, blocks: CH2_BLOCKS },
   { title: '第三章 阅读界面', content: CH3_CONTENT, blocks: CH3_BLOCKS },
