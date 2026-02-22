@@ -133,6 +133,7 @@ const StudyHub: React.FC<StudyHubProps> = ({
   const [isQuizGenerating, setIsQuizGenerating] = useState(false);
   const [quizError, setQuizError] = useState('');
   const [quizSlideDir, setQuizSlideDir] = useState<'left' | 'right'>('right');
+  const [isQuizCommentRefreshing, setIsQuizCommentRefreshing] = useState(false);
 
   // ─── Quiz config state ───
   const [qcBookIds, setQcBookIds] = useState<string[]>([]);
@@ -1053,6 +1054,57 @@ const StudyHub: React.FC<StudyHubProps> = ({
       return exists ? prev.map((s) => s.id === session.id ? session : s) : [session, ...prev];
     });
     switchQuizView('result');
+  };
+
+  const handleRefreshQuizOverallComment = async () => {
+    if (!activeQuizSession || isQuizCommentRefreshing || isAiLoading) return;
+
+    const persona = getPersona(activePersonaId || '');
+    const character =
+      getCharacter(activeQuizSession.characterId || '') || getCharacter(activeCharacterId || '');
+    if (!persona || !character) {
+      showNotification('缺少用户人设或角色，无法刷新总评', 'error');
+      return;
+    }
+
+    setIsQuizCommentRefreshing(true);
+    try {
+      const bookTitles = activeQuizSession.config.bookIds
+        .map((id) => getBook(id)?.title || '')
+        .filter(Boolean);
+      const prompt = buildQuizOverallCommentPrompt({
+        userPersona: persona,
+        character,
+        worldBookEntries,
+        questions: activeQuizSession.questions,
+        userAnswers: activeQuizSession.userAnswers,
+        bookTitles,
+      });
+      console.log('[StudyHub Prompt]', prompt);
+      const comment = await callAiModel(prompt, apiConfig);
+      const refreshedSession: QuizSession = {
+        ...activeQuizSession,
+        overallComment: parseStudyHubAiComment(comment),
+        characterId: character.id,
+        characterName: character.nickname || character.name,
+      };
+
+      setActiveQuizSession(refreshedSession);
+      await saveQuizSession(refreshedSession);
+      setQuizSessions((prev) => {
+        const exists = prev.some((s) => s.id === refreshedSession.id);
+        return exists
+          ? prev.map((s) => (s.id === refreshedSession.id ? refreshedSession : s))
+          : [refreshedSession, ...prev];
+      });
+      showNotification('角色总评已刷新');
+    } catch (err) {
+      console.error('Quiz comment refresh error:', err);
+      const msg = err instanceof Error ? err.message : '未知错误';
+      showNotification(`总评刷新失败：${msg}`, 'error');
+    } finally {
+      setIsQuizCommentRefreshing(false);
+    }
   };
 
   const handleDeleteQuizSession = async (id: string) => {
@@ -2557,19 +2609,39 @@ const StudyHub: React.FC<StudyHubProps> = ({
         </div>
 
         {/* AI Overall Comment */}
-        {activeQuizSession.overallComment && (
-          <div className={`${cardClass} rounded-2xl p-4`}>
-            <div className="flex items-center gap-2 mb-2">
-              <BookMarked size={16} className="text-rose-400" />
-              <span className={`text-sm font-medium ${headingClass}`}>{activeQuizSession.characterName || 'AI'} 的总评</span>
+        <div className={`${cardClass} rounded-2xl p-4`}>
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <BookMarked size={16} className="text-rose-400 flex-shrink-0" />
+              <span className={`text-sm font-medium truncate ${headingClass}`}>
+                {activeQuizSession.characterName || 'AI'} 的总评
+              </span>
             </div>
-            <p className={`text-sm ${isDarkMode ? 'text-amber-200/80' : 'text-amber-800/80'}`}
+            <button
+              type="button"
+              onClick={handleRefreshQuizOverallComment}
+              disabled={isQuizCommentRefreshing || isAiLoading}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${
+                isQuizCommentRefreshing || isAiLoading
+                  ? `${pressedClass} text-slate-400 cursor-not-allowed`
+                  : `${btnClass} text-rose-400 active:scale-95`
+              }`}
+            >
+              {isQuizCommentRefreshing ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
+              刷新总评
+            </button>
+          </div>
+          {activeQuizSession.overallComment ? (
+            <p
+              className={`text-sm ${isDarkMode ? 'text-amber-200/80' : 'text-amber-800/80'}`}
               style={{ fontFamily: '"Noto Serif SC", serif', fontStyle: 'italic', lineHeight: '1.8' }}
             >
               {activeQuizSession.overallComment}
             </p>
-          </div>
-        )}
+          ) : (
+            <p className={`text-xs ${subTextClass}`}>暂无总评，点击“刷新总评”重新生成。</p>
+          )}
+        </div>
 
         {/* Actions */}
         <div className="flex gap-3">
