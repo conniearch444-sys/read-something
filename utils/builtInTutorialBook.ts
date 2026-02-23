@@ -12,7 +12,7 @@ import {
 
 export const BUILT_IN_TUTORIAL_BOOK_ID = '__built_in_tutorial__';
 /** Bump this number whenever tutorial content is changed so existing users get the update. */
-export const BUILT_IN_TUTORIAL_VERSION = 3.3;
+export const BUILT_IN_TUTORIAL_VERSION = 3.4;
 
 const TUTORIAL_UNREAD_KEY = '__built_in_tutorial_unread__';
 export const isTutorialUnread = (): boolean => {
@@ -41,6 +41,20 @@ const CH0_CONTENT = `更新记录
 
 本次更新内容：
 
+1.新增导出有声书功能
+可以多选章节，导出每一章已经生成过音频的段落拼接为有声书，支持一起导出SRT格式字幕。
+
+2.新增写笔记界面文字编辑样式
+支持编辑文字时改变文字样式为粗体，斜体，有序列表，无序列表，改变文字为标题或正文字号。
+
+3.修正GBK编码格式txt导入乱码问题
+
+4.优化发送给char的书籍上文断句方式
+
+-更新时间：2026.02.23
+
+本次更新内容：
+
 1.TTS 板块功能完善
 阅读页已支持段落级 TTS 生成功能：可从当前位置开始朗读、暂停/继续、停止播放；支持按段落缓存音频并在需要时单段刷新重生成，减少重复请求等待；新增多平台 TTS API 预设，语速/语言切换。
 
@@ -52,6 +66,18 @@ const CH0_CONTENT = `更新记录
 
 const CH0_BLOCKS: ReaderContentBlock[] = [
   text('更新记录'),
+  text(`-更新时间：2026.02.23`),
+  text(`本次更新内容：
+
+1.新增导出有声书功能
+可以多选章节，导出每一章已经生成过音频的段落拼接为有声书，支持一起导出SRT格式字幕。
+
+2.新增写笔记界面文字编辑样式
+支持编辑文字时改变文字样式为粗体，斜体，有序列表，无序列表，改变文字为标题或正文字号。
+
+3.修正GBK编码格式txt导入乱码问题
+
+4.优化发送给char的书籍上文断句方式`),
   text(`-更新时间：2026.02.23`),
   text(`本次更新内容：
 
