@@ -12,7 +12,7 @@ import {
 
 export const BUILT_IN_TUTORIAL_BOOK_ID = '__built_in_tutorial__';
 /** Bump this number whenever tutorial content is changed so existing users get the update. */
-export const BUILT_IN_TUTORIAL_VERSION = 3.5;
+export const BUILT_IN_TUTORIAL_VERSION = 3.6;
 
 const TUTORIAL_UNREAD_KEY = '__built_in_tutorial_unread__';
 export const isTutorialUnread = (): boolean => {
@@ -36,6 +36,13 @@ const img = (imageRef: string, alt: string, w?: number, h?: number): ReaderConte
 /*  更新记录                                                            */
 /* ------------------------------------------------------------------ */
 const CH0_CONTENT = `更新记录
+
+-更新时间：2026.02.25
+
+本次更新内容：
+
+1.新增按字数切分章节功能
+对于epub以外的书籍格式可以人工设定按照字符数切分章节，与正则模式切分二选一，但是注意对于pdf和docx格式，选择人工按照字符数切分则内置的图片会丢失。
 
 -更新时间：2026.02.24
 
@@ -73,6 +80,11 @@ const CH0_CONTENT = `更新记录
 
 const CH0_BLOCKS: ReaderContentBlock[] = [
   text('更新记录'),
+  text(`-更新时间：2026.02.25`),
+  text(`本次更新内容：
+
+1.新增按字数切分章节功能
+对于epub以外的书籍格式可以人工设定按照字符数切分章节，与正则模式切分二选一，但是注意对于pdf和docx格式，选择人工按照字符数切分则内置的图片会丢失。`),
   text(`-更新时间：2026.02.24`),
   text(`本次更新内容：
 

@@ -100,6 +100,7 @@ export interface Book {
   fullText?: string; // The raw content of the book
   chapters?: Chapter[]; // Parsed chapters
   chapterRegex?: string; // The regex used to parse
+  chapterCharCount?: number; // Target chars per chapter (fixed-length splitting)
   fullTextLength?: number; // Cached text length for lightweight listing/sorting
   chapterCount?: number; // Cached chapter count for lightweight listing/sorting
   ragEnabled?: boolean; // Whether RAG index is enabled for this book

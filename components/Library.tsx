@@ -192,8 +192,11 @@ const Library: React.FC<LibraryProps> = ({
   const [txtFileUrlMode, setTxtFileUrlMode] = useState(false);
   const [tempTxtUrl, setTempTxtUrl] = useState('');
   const [detectedChapters, setDetectedChapters] = useState<number>(0);
+  const [detectedCharCountChapters, setDetectedCharCountChapters] = useState<number>(0);
   const [isImportStructuredChapterMode, setIsImportStructuredChapterMode] = useState(false);
   const [isEditStructuredChapterMode, setIsEditStructuredChapterMode] = useState(false);
+  const [importCharCount, setImportCharCount] = useState('');
+  const [editCharCount, setEditCharCount] = useState('');
   const [sessionGeneratedImageRefs, setSessionGeneratedImageRefs] = useState<string[]>([]);
   
   // State for Deletion Confirmation
@@ -336,6 +339,83 @@ const Library: React.FC<LibraryProps> = ({
     }
   };
 
+  // ─── Fixed character-count chapter splitting ───
+  const CHARCOUNT_MIN = 500;
+  const CHARCOUNT_MAX = 50000;
+  const CHARCOUNT_DEFAULT = 2000;
+
+  /** Check if position i in text is a genuine sentence-ending punctuation.
+   *  Avoids false positives: decimals (3.14), numbered lists (5.这是), abbreviations (Dr.Smith). */
+  const isSafeSentenceEnd = (text: string, i: number): boolean => {
+    const ch = text[i];
+    // CJK sentence-end punctuation — unambiguous
+    if (ch === '。' || ch === '！' || ch === '？' || ch === '；' || ch === '…' || ch === '｡') return true;
+    // English ! ? ; — almost always sentence-end
+    if (ch === '!' || ch === '?' || ch === ';') return true;
+    // English period . — needs context check
+    if (ch === '.') {
+      const prev = i > 0 ? text[i - 1] : '';
+      const next = i < text.length - 1 ? text[i + 1] : '';
+      // Decimal: 3.14 or list number: 5.
+      if (/\d/.test(prev) || /\d/.test(next)) return false;
+      // Abbreviation: next char is non-whitespace, non-quote, non-bracket
+      if (next && !/[\s"'"\u201C\u201D\u2018\u2019\uFF09)\]】》]/.test(next)) return false;
+      return true;
+    }
+    return false;
+  };
+
+  const parseChaptersByCharCount = (text: string, targetCount: number): Chapter[] => {
+    if (!text) return [];
+    const target = Math.max(CHARCOUNT_MIN, Math.min(CHARCOUNT_MAX, targetCount));
+    const chapters: Chapter[] = [];
+    let cursor = 0;
+    let chapterIndex = 1;
+
+    while (cursor < text.length) {
+      const remaining = text.length - cursor;
+      // If remaining text fits within 130% of target, make it the last chapter
+      if (remaining <= target * 1.3) {
+        const content = text.substring(cursor).trimStart();
+        if (content) chapters.push({ title: `第${chapterIndex}章`, content });
+        break;
+      }
+
+      const idealEnd = cursor + target;
+      let breakPoint = -1;
+
+      // Strategy 1: Find paragraph boundary (\n) backward from idealEnd
+      const backLimit = Math.max(cursor + 1, idealEnd - Math.floor(target * 0.3));
+      for (let i = idealEnd; i >= backLimit; i--) {
+        if (text[i] === '\n') { breakPoint = i + 1; break; }
+      }
+
+      // Strategy 2: Find paragraph boundary forward from idealEnd
+      if (breakPoint === -1) {
+        const fwdLimit = Math.min(text.length, idealEnd + Math.floor(target * 0.3));
+        for (let i = idealEnd + 1; i < fwdLimit; i++) {
+          if (text[i] === '\n') { breakPoint = i + 1; break; }
+        }
+      }
+
+      // Strategy 3: Find sentence boundary backward from idealEnd
+      if (breakPoint === -1) {
+        for (let i = idealEnd; i >= backLimit; i--) {
+          if (isSafeSentenceEnd(text, i)) { breakPoint = i + 1; break; }
+        }
+      }
+
+      // Fallback: hard cut at idealEnd
+      if (breakPoint === -1) breakPoint = idealEnd;
+
+      const content = text.substring(cursor, breakPoint).trimStart();
+      if (content) chapters.push({ title: `第${chapterIndex}章`, content });
+      cursor = breakPoint;
+      chapterIndex++;
+    }
+    return chapters;
+  };
+
   const hasStructuredChapterBlocks = (chapters: Chapter[] | undefined) => {
     if (!Array.isArray(chapters) || chapters.length === 0) return false;
     const hasAnyBlocks = chapters.some((chapter) => Array.isArray(chapter.blocks) && chapter.blocks.length > 0);
@@ -373,11 +453,19 @@ const Library: React.FC<LibraryProps> = ({
   };
 
   const resolveChaptersForSave = (book: Partial<Book>, isEdit: boolean) => {
+    // Highest priority: fixed character-count splitting
+    const charCountStr = isEdit ? editCharCount : importCharCount;
+    const charCountNum = parseInt(charCountStr);
+    if (charCountStr.trim() && charCountNum >= CHARCOUNT_MIN) {
+      return parseChaptersByCharCount(book.fullText || '', charCountNum);
+    }
+    // Then: structured chapters (EPUB/PDF/WORD)
     const structuredEnabled = getStructuredChapterMode(isEdit);
     const structuredChapters = Array.isArray(book.chapters) ? book.chapters : [];
     if (structuredEnabled && structuredChapters.length > 0) {
       return structuredChapters;
     }
+    // Fallback: regex
     return parseChapters(book.fullText || '', book.chapterRegex || '');
   };
 
@@ -400,6 +488,16 @@ const Library: React.FC<LibraryProps> = ({
         }
     }
 
+    // Charcount detection (independent)
+    const charCountStr = isImportModalOpen ? importCharCount : editCharCount;
+    const charCountNum = parseInt(charCountStr);
+    if (text && charCountStr.trim() && charCountNum >= CHARCOUNT_MIN) {
+        setDetectedCharCountChapters(parseChaptersByCharCount(text, charCountNum).length);
+    } else {
+        setDetectedCharCountChapters(0);
+    }
+
+    // Regex / structured detection
     if (structuredChapterCount > 0) {
         setDetectedChapters(structuredChapterCount);
         return;
@@ -422,6 +520,8 @@ const Library: React.FC<LibraryProps> = ({
     isEditStructuredChapterMode,
     isImportModalOpen,
     isEditModalOpen,
+    importCharCount,
+    editCharCount,
   ]);
 
 
@@ -529,6 +629,7 @@ const Library: React.FC<LibraryProps> = ({
     }
     setEditingBook({ ...book, tags: book.tags || [], fullText: '', chapters: [] });
     setIsEditStructuredChapterMode(false);
+    setEditCharCount(book.chapterCharCount ? String(book.chapterCharCount) : '');
     setIsLoadingBookContent(true);
     setClosingModal(prev => prev === 'edit' ? null : prev);
     setIsEditModalOpen(true);
@@ -568,6 +669,7 @@ const Library: React.FC<LibraryProps> = ({
          title: '', author: '', coverUrl: '', tags: [], fullText: '', chapterRegex: '', progress: 0, lastRead: '从未阅读'
      });
      setIsImportStructuredChapterMode(false);
+     setImportCharCount('');
      setClosingModal(prev => prev === 'import' ? null : prev);
      setIsImportModalOpen(true);
      resetModalState();
@@ -628,10 +730,16 @@ const Library: React.FC<LibraryProps> = ({
   // Save Edit
   const saveBookChanges = () => {
     if (editingBook) {
+      // Mutual exclusion check: regex and charcount can't both have values
+      if (editCharCount.trim() && (editingBook.chapterRegex || '').trim()) {
+        openErrorModal('正则拆章和定字拆章只能二选一，请清空其中一个输入框。');
+        return;
+      }
       const chapters = resolveChaptersForSave(editingBook, true);
       const updatedBook = {
         ...editingBook,
         chapterRegex: isEditStructuredChapterMode ? '' : (editingBook.chapterRegex || ''),
+        chapterCharCount: editCharCount.trim() ? parseInt(editCharCount) : undefined,
         chapters,
         ragEnabled: editRagEnabled,
         ragModelPresetId: editRagEnabled ? editRagPresetId : undefined,
@@ -645,21 +753,27 @@ const Library: React.FC<LibraryProps> = ({
   // Save Import
   const saveImportBook = async () => {
      if (importingBook.title) {
+        // Mutual exclusion check: regex and charcount can't both have values
+        const importRegex = isImportStructuredChapterMode ? '' : (importingBook.chapterRegex || '');
+        if (importCharCount.trim() && importRegex.trim()) {
+          openErrorModal('正则拆章和定字拆章只能二选一，请清空其中一个输入框。');
+          return;
+        }
         const text = importingBook.fullText || '';
-        const regex = isImportStructuredChapterMode ? '' : (importingBook.chapterRegex || '');
         const chapters = resolveChaptersForSave(importingBook, false);
 
         const newBook: Book = {
             id: Date.now().toString(),
             title: importingBook.title,
             author: importingBook.author || '佚名',
-            coverUrl: importingBook.coverUrl || '', // Empty for default
+            coverUrl: importingBook.coverUrl || '',
             tags: importingBook.tags || [],
             progress: 0,
             lastRead: '从未阅读',
             fullText: text,
-            chapterRegex: regex,
+            chapterRegex: importRegex,
             chapters: chapters,
+            chapterCharCount: importCharCount.trim() ? parseInt(importCharCount) : undefined,
             ragEnabled: importRagEnabled,
             ragModelPresetId: importRagEnabled ? importRagPresetId : undefined,
         };
@@ -1188,6 +1302,33 @@ const Library: React.FC<LibraryProps> = ({
           </p>
         </div>
 
+        <div className="space-y-1">
+          <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1 mb-1 block">
+            按字数切分章节
+          </label>
+          <div className="flex gap-2">
+            <input
+              type="number"
+              min={CHARCOUNT_MIN}
+              max={CHARCOUNT_MAX}
+              step={100}
+              value={isEdit ? editCharCount : importCharCount}
+              onChange={(e) => isEdit ? setEditCharCount(e.target.value) : setImportCharCount(e.target.value)}
+              onBlur={(e) => {
+                const v = e.target.value.trim();
+                if (!v) return;
+                const n = Math.max(CHARCOUNT_MIN, Math.min(CHARCOUNT_MAX, parseInt(v) || CHARCOUNT_DEFAULT));
+                isEdit ? setEditCharCount(String(n)) : setImportCharCount(String(n));
+              }}
+              placeholder="每章目标字数，如 2000"
+              className={`flex-1 px-4 py-3 text-sm rounded-xl outline-none ${inputClass}`}
+            />
+            <span className={`shrink-0 min-w-[6rem] flex items-center justify-end text-[10px] whitespace-nowrap ${detectedCharCountChapters > 0 ? 'text-emerald-500' : 'text-slate-400'}`}>
+              {detectedCharCountChapters > 0 ? `检测到 ${detectedCharCountChapters} 章` : '默认全文一章'}
+            </span>
+          </div>
+        </div>
+
         <div className="space-y-2">
           <label className="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">标签</label>
           <div className={`w-full p-2 rounded-xl flex flex-wrap gap-2 min-h-[48px] ${inputClass}`}>
@@ -1203,7 +1344,7 @@ const Library: React.FC<LibraryProps> = ({
               onChange={(e) => setTagInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && addTag()}
               placeholder={book.tags && book.tags.length > 0 ? '+ 添加' : '添加标签...'}
-              className="bg-transparent outline-none text-xs flex-1 min-w-[60px] py-1"
+              className={`bg-transparent outline-none text-sm flex-1 min-w-[60px] py-1 px-2 ${isDarkMode ? 'placeholder:text-slate-500' : 'placeholder:text-slate-400'}`}
             />
           </div>
         </div>
