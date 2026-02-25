@@ -689,6 +689,8 @@ const sanitizeBookmarkName = (raw: string, fallback: string) => {
   return candidate.slice(0, BOOKMARK_NAME_MAX_LENGTH);
 };
 
+const escapeRegExp = (raw: string) => raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 const sortReaderBookmarks = (source: ReaderBookmark[]) =>
   [...source].sort((left, right) => {
     const leftOffset = left.readingPosition.globalCharOffset;
@@ -1103,6 +1105,31 @@ const Reader: React.FC<ReaderProps> = ({
     [activeBook?.id, activePersonaId, activeCharacterId]
   );
   const sortedBookmarks = useMemo(() => sortReaderBookmarks(bookmarks), [bookmarks]);
+  const resolveBookmarkChapterLabel = useCallback((position: ReaderPositionState | null | undefined) => {
+    const chapterIndex = position?.chapterIndex;
+    if (chapterIndex === null || chapterIndex === undefined || !Number.isFinite(chapterIndex)) {
+      return '全文';
+    }
+    const normalizedChapterNo = Math.max(1, Math.floor(chapterIndex) + 1);
+    return `第${normalizedChapterNo}章`;
+  }, []);
+  const buildDefaultBookmarkName = useCallback((position: ReaderPositionState | null | undefined, source: ReaderBookmark[]) => {
+    const chapterLabel = resolveBookmarkChapterLabel(position);
+    const labelRegex = new RegExp(`^${escapeRegExp(chapterLabel)}-(\\d+)$`);
+    let maxSuffix = 0;
+
+    source.forEach((bookmark) => {
+      if (resolveBookmarkChapterLabel(bookmark.readingPosition) !== chapterLabel) return;
+      const match = bookmark.name.trim().match(labelRegex);
+      if (!match) return;
+      const parsedSuffix = Number.parseInt(match[1], 10);
+      if (Number.isFinite(parsedSuffix) && parsedSuffix > maxSuffix) {
+        maxSuffix = parsedSuffix;
+      }
+    });
+
+    return `${chapterLabel}-${maxSuffix + 1}`;
+  }, [resolveBookmarkChapterLabel]);
   const syncFloatingPanelTop = useCallback(() => {
     const root = readerRootRef.current;
     const viewportContainer = readerViewportContainerRef.current;
@@ -2640,7 +2667,7 @@ const Reader: React.FC<ReaderProps> = ({
     if (!fallbackPosition) return;
     const normalizedPosition = normalizeReaderPosition(fallbackPosition);
     if (!normalizedPosition) return;
-    const nextDefaultName = `\u4e66\u7b7e ${sortedBookmarks.length + 1}`;
+    const nextDefaultName = buildDefaultBookmarkName(normalizedPosition, bookmarks);
     clearBookmarkModalTimer();
     setIsBookmarkModalClosing(false);
     setPendingBookmarkPosition({ ...normalizedPosition, updatedAt: Date.now() });
@@ -2651,7 +2678,7 @@ const Reader: React.FC<ReaderProps> = ({
   const handleConfirmAddBookmark = () => {
     if (!pendingBookmarkPosition) return;
     const timestamp = Date.now();
-    const fallbackName = `\u4e66\u7b7e ${sortedBookmarks.length + 1}`;
+    const fallbackName = buildDefaultBookmarkName(pendingBookmarkPosition, bookmarks);
     const bookmark: ReaderBookmark = {
       id: createReaderBookmarkId(),
       name: sanitizeBookmarkName(bookmarkNameDraft, fallbackName),
@@ -4420,6 +4447,7 @@ const Reader: React.FC<ReaderProps> = ({
                     )}
                     {sortedBookmarks.map((bookmark, index) => {
                       const isActive = bookmark.id === selectedBookmarkId;
+                      const chapterLabel = resolveBookmarkChapterLabel(bookmark.readingPosition);
                       return (
                         <div key={bookmark.id} className="flex items-center gap-1">
                           <button
@@ -4433,8 +4461,15 @@ const Reader: React.FC<ReaderProps> = ({
                             onClick={() => handleJumpToBookmark(bookmark)}
                             className={`flex-1 text-left px-3 py-2 rounded-lg text-sm transition-colors ${isActive ? 'text-rose-400 bg-rose-400/10' : 'text-slate-500 hover:bg-black/5 dark:hover:bg-white/5'}`}
                           >
-                            <span className="text-xs mr-2 opacity-70">{index + 1}.</span>
-                            <span>{bookmark.name}</span>
+                            <span className="flex w-full items-center justify-between gap-2">
+                              <span className="min-w-0 truncate">
+                                <span className="text-xs mr-2 opacity-70">{index + 1}.</span>
+                                <span>{bookmark.name}</span>
+                              </span>
+                              <span className={`shrink-0 text-[11px] text-right ${isActive ? 'opacity-80' : 'opacity-60'}`}>
+                                {chapterLabel}
+                              </span>
+                            </span>
                           </button>
                           <button
                             type="button"
