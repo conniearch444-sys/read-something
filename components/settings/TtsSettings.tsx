@@ -399,7 +399,7 @@ const TtsSettings: React.FC<TtsSettingsProps> = ({ config, setConfig, presets, s
     const abort = new AbortController();
     testAbortRef.current = abort;
     try {
-      const blob = await callTtsApi('测试语音合成，一二三四五。', config, abort.signal);
+      const blob = await callTtsApi('1 2 3 4 5', config, abort.signal);
       if (blob && blob.size > 0) {
         setTestSuccess(true);
         setTimeout(() => setTestSuccess(false), 3000);
