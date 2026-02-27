@@ -68,6 +68,8 @@ interface Props {
   onDeleteChatSummaryCard: (cardId: string) => void;
   onMergeBookSummaryCards: (cardIds: string[]) => void;
   onMergeChatSummaryCards: (cardIds: string[]) => void;
+  onCondenseMergeBookSummaryCards: (cardIds: string[]) => void;
+  onCondenseMergeChatSummaryCards: (cardIds: string[]) => void;
   onRequestManualBookSummary: (start: number, end: number) => void;
   onRequestManualChatSummary: (start: number, end: number) => void;
   currentReadCharOffset: number;
@@ -446,6 +448,8 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
     onDeleteChatSummaryCard,
     onMergeBookSummaryCards,
     onMergeChatSummaryCards,
+    onCondenseMergeBookSummaryCards,
+    onCondenseMergeChatSummaryCards,
     onRequestManualBookSummary,
     onRequestManualChatSummary,
     currentReadCharOffset,
@@ -800,6 +804,7 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
     const onEdit = isBook ? onEditBookSummaryCard : onEditChatSummaryCard;
     const onDelete = isBook ? onDeleteBookSummaryCard : onDeleteChatSummaryCard;
     const onMergeCards = isBook ? onMergeBookSummaryCards : onMergeChatSummaryCards;
+    const onCondenseMergeCards = isBook ? onCondenseMergeBookSummaryCards : onCondenseMergeChatSummaryCards;
     const selectedCardIds = isBook ? selectedBookSummaryCardIds : selectedChatSummaryCardIds;
     const setSelectedCardIds = isBook ? setSelectedBookSummaryCardIds : setSelectedChatSummaryCardIds;
     const selectedIdSet = new Set(selectedCardIds);
@@ -837,6 +842,11 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
     const mergeSelectedCards = () => {
       if (selectedCardIds.length < 2) return;
       onMergeCards(selectedCardIds);
+      setSelectedCardIds([]);
+    };
+    const condenseMergeSelectedCards = () => {
+      if (selectedCardIds.length < 2) return;
+      onCondenseMergeCards(selectedCardIds);
       setSelectedCardIds([]);
     };
     return (
@@ -883,21 +893,58 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
             </button>
             <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
               <span>已选中 {selectedCardIds.length} 张卡片</span>
-              <button
-                type="button"
-                onClick={mergeSelectedCards}
-                disabled={selectedCardIds.length < 2}
-                className={`h-8 px-3 rounded-full text-xs font-bold transition-all ${
-                  selectedCardIds.length >= 2
-                    ? `text-rose-400 ${btnClass} ${activeBtnClass}`
-                    : disabledIconButtonClass
-                }`}
-              >
-                合并选中卡片
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={condenseMergeSelectedCards}
+                  disabled={selectedCardIds.length < 2 || summaryTaskRunning}
+                  className={`h-8 px-3 rounded-full text-xs font-bold transition-all ${
+                    selectedCardIds.length >= 2 && !summaryTaskRunning
+                      ? `${btnClass} ${activeBtnClass} !text-slate-500`
+                      : disabledIconButtonClass
+                  }`}
+                >
+                  合并精简
+                </button>
+                <button
+                  type="button"
+                  onClick={mergeSelectedCards}
+                  disabled={selectedCardIds.length < 2}
+                  className={`h-8 px-3 rounded-full text-xs font-bold transition-all ${
+                    selectedCardIds.length >= 2
+                      ? `${btnClass} ${activeBtnClass} !text-slate-500`
+                      : disabledIconButtonClass
+                  }`}
+                >
+                  合并
+                </button>
+              </div>
             </div>
           </div>
-          <div className="mt-4 flex-1 overflow-y-auto no-scrollbar px-4 py-4">
+          <div className="mt-4 flex-1 overflow-y-auto no-scrollbar pt-2 pb-4 px-3 -mx-3">
+            {cards.length > 0 && (
+              <div className="flex items-center justify-center gap-3 mb-4">
+                <button
+                  type="button"
+                  onClick={() => setSelectedCardIds(cards.map((c) => c.id))}
+                  className={`h-7 px-3 rounded-full text-xs font-bold transition-all ${btnClass} ${activeBtnClass} !text-slate-500`}
+                >
+                  全选
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedCardIds([])}
+                  disabled={selectedCardIds.length === 0}
+                  className={`h-7 px-3 rounded-full text-xs font-bold transition-all ${
+                    selectedCardIds.length > 0
+                      ? `${btnClass} ${activeBtnClass} !text-slate-500`
+                      : disabledIconButtonClass
+                  }`}
+                >
+                  清除
+                </button>
+              </div>
+            )}
             <div className="space-y-5">
               {cards.length === 0 && <div className="text-xs text-slate-500 text-center py-10">暂无总结卡片</div>}
               {cards.map((card) => {
@@ -909,7 +956,7 @@ const ReaderMoreSettingsPanel: React.FC<Props> = (props) => {
                     }
                   : undefined;
                 return (
-                <div key={card.id} className={`rounded-2xl p-4 ${raisedCardClass} ${isCardSelected ? 'ring-2 ring-rose-300/80' : ''}`}>
+                <div key={card.id} className={`rounded-2xl p-4 ${raisedCardClass}`}>
                   <div className="mb-3 flex justify-center">
                     <button
                       type="button"

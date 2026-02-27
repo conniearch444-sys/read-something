@@ -534,6 +534,9 @@ const App: React.FC = () => {
   const VIEW_TRANSITION_MS = 260;
   const [currentView, setCurrentView] = useState<AppView>(AppView.LIBRARY);
   const [activeBook, setActiveBook] = useState<Book | null>(null);
+  const [pendingHighlightJump, setPendingHighlightJump] = useState<{
+    bookId: string; chapterIndex: number | null; charOffset: number;
+  } | null>(null);
   const [viewAnimationClass, setViewAnimationClass] = useState('app-view-enter-left');
   const [isViewTransitioning, setIsViewTransitioning] = useState(false);
   const viewTransitionTimerRef = useRef<number | null>(null);
@@ -1701,6 +1704,13 @@ const App: React.FC = () => {
     }
   };
 
+  const handleJumpToBookHighlight = (bookId: string, chapterIndex: number | null, charOffset: number) => {
+    const book = books.find(b => b.id === bookId);
+    if (!book) return;
+    setPendingHighlightJump({ bookId, chapterIndex, charOffset });
+    handleOpenBook(book);
+  };
+
   const handleBackToLibrary = (snapshot?: ReaderSessionSnapshot) => {
     const closedAt = snapshot?.lastReadAt || Date.now();
     const openedAt = readingSessionStartedAtRef.current;
@@ -2256,6 +2266,8 @@ const App: React.FC = () => {
             ttsConfig={ttsConfig}
             ttsPresets={ttsPresets}
             setTtsConfig={setTtsConfig}
+            pendingHighlightJump={pendingHighlightJump}
+            onClearPendingHighlightJump={() => setPendingHighlightJump(null)}
           />
         </div>
         {/* Global toasts (shared across all views) */}
@@ -2367,6 +2379,7 @@ const App: React.FC = () => {
             readingContextIgnorePanelClip={appSettings.readerMore.feature.readingContextIgnorePanelClip}
             showNotification={showNotification}
             ragApiConfigResolver={resolveRagApiConfig}
+            onJumpToBookHighlight={handleJumpToBookHighlight}
           />
         </div>
         {currentView === AppView.SETTINGS && (

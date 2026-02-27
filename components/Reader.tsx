@@ -8,6 +8,7 @@ import {
   Bookmark,
   Check,
   ChevronDown,
+  Copy,
   Highlighter,
   List as ListIcon,
   MoreHorizontal,
@@ -47,6 +48,14 @@ import { getImageBlobByRef, isImageRef } from '../utils/imageStorage';
 import { resolveVisibleReaderTextRange, resolveFullViewportTextRange } from '../utils/readerVisibleRange';
 import ReaderMessagePanel from './ReaderMessagePanel';
 import ResolvedImage from './ResolvedImage';
+import {
+  splitReaderParagraphs,
+  resolveLeadingDuplicateTitleParagraphCount,
+  dropLeadingDuplicateTitleParagraph,
+  normalizeReaderLayoutText,
+} from '../utils/readerTextNormalize';
+import { PRESET_HIGHLIGHT_COLORS, resolveHighlightItems, buildPositionFromHighlight } from '../utils/highlightUtils';
+import type { ResolvedHighlightItem } from '../utils/highlightUtils';
 
 interface ReaderProps {
   onBack: (snapshot?: ReaderSessionSnapshot) => void;
@@ -74,12 +83,14 @@ interface ReaderProps {
   ttsConfig?: TtsConfig;
   ttsPresets?: TtsPreset[];
   setTtsConfig?: (config: TtsConfig) => void;
+  pendingHighlightJump?: { bookId: string; chapterIndex: number | null; charOffset: number } | null;
+  onClearPendingHighlightJump?: () => void;
 }
 
 type ScrollTarget = 'top' | 'bottom';
 type ChapterSwitchDirection = 'next' | 'prev';
 type FloatingPanel = 'none' | 'toc' | 'highlighter' | 'typography';
-type TocPanelTab = 'toc' | 'bookmarks';
+type TocPanelTab = 'toc' | 'bookmarks' | 'highlights';
 
 interface RgbValue {
   r: number;
@@ -153,7 +164,7 @@ const TYPOGRAPHY_COLOR_EDITOR_TRANSITION_MS = 180;
 const READER_APPEARANCE_STORAGE_KEY = 'app_reader_appearance';
 const READER_IMAGE_DIMENSION_CACHE_STORAGE_KEY = 'app_reader_image_dimension_cache_v1';
 const DEFAULT_HIGHLIGHT_COLOR = '#FFE066';
-const PRESET_HIGHLIGHT_COLORS = ['#FFE066', '#FFD6A5', '#FFADAD', '#C7F9CC', '#A0C4FF', '#D7B5FF'];
+// PRESET_HIGHLIGHT_COLORS is imported from ../utils/highlightUtils
 const PRESET_TEXT_COLORS = ['#1E293B', '#334155', '#475569', '#0F172A', '#9F1239', '#164E63'];
 const PRESET_BACKGROUND_COLORS = ['#F0F2F5', '#FFF7E8', '#F2FCEB', '#EAF5FF', '#1A202C', '#0F172A'];
 const SYSTEM_READER_FONT_ID = 'reader-font-system-default';
@@ -243,12 +254,6 @@ const isSameHexColor = (left: string, right: string) => left.trim().toUpperCase(
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const ENGLISH_LETTER_REGEX = /[A-Za-z]/;
 const WHITESPACE_REGEX = /\s/;
-const LATIN_APOSTROPHE_NORMALIZE_REGEX = /([A-Za-z0-9])[\u2018\u2019\u02BC]([A-Za-z0-9])/g;
-const LATIN_OPEN_QUOTE_NORMALIZE_REGEX = /(^|[\s([{<])[\u201C\u201D]([A-Za-z0-9])/g;
-const LATIN_CLOSE_QUOTE_NORMALIZE_REGEX = /([A-Za-z0-9])[\u201C\u201D](?=($|[\s)\]}>.,!?;:]))/g;
-const LATIN_CLOSE_QUOTE_AFTER_PUNCT_REGEX = /([A-Za-z0-9][A-Za-z0-9'"-]*[.,!?;:])[\u201C\u201D](?=($|[\s)\]}>]))/g;
-const LATIN_FULLWIDTH_SPACE_NORMALIZE_REGEX = /([A-Za-z0-9])[\u3000\u00A0]+([A-Za-z0-9])/g;
-
 const isEnglishLetter = (char: string | undefined) => !!char && ENGLISH_LETTER_REGEX.test(char);
 const isWhitespaceChar = (char: string | undefined) => !char || WHITESPACE_REGEX.test(char);
 const isValidReaderTextAlign = (value: unknown): value is ReaderTextAlign =>
@@ -311,323 +316,6 @@ const getDefaultReaderTypography = (darkMode: boolean): ReaderTypographyStyle =>
   backgroundColor: darkMode ? '#1A202C' : '#F0F2F5',
   textAlign: 'left',
 });
-
-const normalizeLatinTypographyArtifacts = (raw: string) =>
-  raw
-    .replace(/\uFF02/g, '"')
-    .replace(/\uFF07/g, "'")
-    // Keep Latin contractions and possessives compact: It's / don't / Harry's
-    .replace(LATIN_APOSTROPHE_NORMALIZE_REGEX, "$1'$2")
-    .replace(LATIN_OPEN_QUOTE_NORMALIZE_REGEX, '$1"$2')
-    .replace(LATIN_CLOSE_QUOTE_NORMALIZE_REGEX, '$1"')
-    .replace(LATIN_CLOSE_QUOTE_AFTER_PUNCT_REGEX, '$1"')
-    .replace(LATIN_FULLWIDTH_SPACE_NORMALIZE_REGEX, '$1 $2');
-
-const splitReaderParagraphs = (raw: string) => {
-  const normalizedText = normalizeLatinTypographyArtifacts(raw)
-    .replace(/\r\n?/g, '\n')
-    .replace(/[\u2028\u2029\u0085]/g, '\n')
-    .trim();
-  if (!normalizedText) return [] as string[];
-
-  // Always split by line breaks after normalization so in-text newlines
-  // won't collapse into visual spaces inside a single <p>.
-  return normalizedText
-    .split(/\n+/)
-    .map((paragraph) => paragraph.trim())
-    .filter(Boolean);
-};
-
-const ENGLISH_NUMBER_VALUE_BY_WORD: Record<string, number> = {
-  zero: 0,
-  one: 1,
-  two: 2,
-  three: 3,
-  four: 4,
-  five: 5,
-  six: 6,
-  seven: 7,
-  eight: 8,
-  nine: 9,
-  ten: 10,
-  eleven: 11,
-  twelve: 12,
-  thirteen: 13,
-  fourteen: 14,
-  fifteen: 15,
-  sixteen: 16,
-  seventeen: 17,
-  eighteen: 18,
-  nineteen: 19,
-  twenty: 20,
-  thirty: 30,
-  forty: 40,
-  fifty: 50,
-  sixty: 60,
-  seventy: 70,
-  eighty: 80,
-  ninety: 90,
-};
-const ENGLISH_NUMBER_MULTIPLIER_BY_WORD: Record<string, number> = {
-  hundred: 100,
-  thousand: 1000,
-};
-const ENGLISH_NUMBER_CONNECTOR_WORDS = new Set(['and']);
-const ROMAN_NUMERAL_CHAR_REGEX = /^[ivxlcdm]+$/;
-const ROMAN_NUMERAL_VALIDATION_REGEX = /^(m{0,4}(cm|cd|d?c{0,3})(xc|xl|l?x{0,3})(ix|iv|v?i{0,3}))$/;
-const ROMAN_NUMERAL_VALUE_BY_CHAR: Record<string, number> = {
-  i: 1,
-  v: 5,
-  x: 10,
-  l: 50,
-  c: 100,
-  d: 500,
-  m: 1000,
-};
-const CHINESE_DIGIT_VALUE_BY_CHAR: Record<string, number> = {
-  零: 0,
-  〇: 0,
-  一: 1,
-  二: 2,
-  两: 2,
-  三: 3,
-  四: 4,
-  五: 5,
-  六: 6,
-  七: 7,
-  八: 8,
-  九: 9,
-};
-const CHINESE_SMALL_UNIT_BY_CHAR: Record<string, number> = {
-  十: 10,
-  百: 100,
-  千: 1000,
-};
-const CHINESE_LARGE_UNIT_BY_CHAR: Record<string, number> = {
-  万: 10000,
-  亿: 100000000,
-};
-const CHINESE_NUMERAL_SEQUENCE_REGEX = /^[零〇一二两三四五六七八九十百千万亿\d]+$/;
-const CHINESE_HEADING_WITH_PREFIX_REGEX = /^第([零〇一二两三四五六七八九十百千万亿\d]+)([章节回卷部篇集幕])?$/;
-const CHINESE_HEADING_WITH_SUFFIX_REGEX = /^([零〇一二两三四五六七八九十百千万亿\d]+)([章节回卷部篇集幕])$/;
-const HEADING_SENTENCE_PUNCTUATION_REGEX = /[。！？!?]/;
-const HEADING_NON_LETTER_SYMBOL_REGEX = /[\(\)\[\]\{\},.;:!?`~"'“”‘’\\\/|<>+=*^%$#@&_-]+/g;
-
-const tokenizeComparableHeading = (raw: string) => {
-  const normalized = raw
-    .replace(/^\uFEFF/, '')
-    .toLowerCase()
-    .replace(/[\u2010-\u2015]/g, ' ')
-    .replace(/\u3000/g, ' ')
-    .replace(HEADING_NON_LETTER_SYMBOL_REGEX, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (!normalized) return [] as string[];
-  return normalized.split(' ').filter(Boolean);
-};
-
-const convertEnglishNumberTokens = (tokens: string[]) => {
-  const next: string[] = [];
-  let index = 0;
-
-  const parseNumberTokenSequence = (start: number) => {
-    let cursor = start;
-    let consumed = 0;
-    let current = 0;
-    let total = 0;
-    let hasNumberPart = false;
-
-    while (cursor < tokens.length) {
-      const token = tokens[cursor];
-      if (ENGLISH_NUMBER_CONNECTOR_WORDS.has(token)) {
-        cursor += 1;
-        consumed += 1;
-        continue;
-      }
-
-      const numberValue = ENGLISH_NUMBER_VALUE_BY_WORD[token];
-      if (typeof numberValue === 'number') {
-        current += numberValue;
-        hasNumberPart = true;
-        cursor += 1;
-        consumed += 1;
-        continue;
-      }
-
-      const multiplierValue = ENGLISH_NUMBER_MULTIPLIER_BY_WORD[token];
-      if (typeof multiplierValue === 'number') {
-        const base = current || 1;
-        current = base * multiplierValue;
-        hasNumberPart = true;
-        if (multiplierValue >= 1000) {
-          total += current;
-          current = 0;
-        }
-        cursor += 1;
-        consumed += 1;
-        continue;
-      }
-
-      break;
-    }
-
-    if (!hasNumberPart) {
-      return { consumed: 0, value: 0 };
-    }
-
-    return { consumed, value: total + current };
-  };
-
-  while (index < tokens.length) {
-    const parsed = parseNumberTokenSequence(index);
-    if (parsed.consumed > 0) {
-      next.push(String(parsed.value));
-      index += parsed.consumed;
-      continue;
-    }
-
-    next.push(tokens[index]);
-    index += 1;
-  }
-
-  return next;
-};
-
-const parseChineseNumeralSequence = (raw: string): number | null => {
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-  if (/^\d+$/.test(trimmed)) return Number.parseInt(trimmed, 10);
-  if (!CHINESE_NUMERAL_SEQUENCE_REGEX.test(trimmed)) return null;
-
-  let total = 0;
-  let section = 0;
-  let digitBuffer: number | null = null;
-
-  for (const char of trimmed) {
-    const digit = CHINESE_DIGIT_VALUE_BY_CHAR[char];
-    if (typeof digit === 'number') {
-      digitBuffer = digit;
-      continue;
-    }
-
-    const smallUnit = CHINESE_SMALL_UNIT_BY_CHAR[char];
-    if (typeof smallUnit === 'number') {
-      const base = digitBuffer ?? 1;
-      section += base * smallUnit;
-      digitBuffer = null;
-      continue;
-    }
-
-    const largeUnit = CHINESE_LARGE_UNIT_BY_CHAR[char];
-    if (typeof largeUnit === 'number') {
-      section += digitBuffer ?? 0;
-      if (section === 0) section = 1;
-      total += section * largeUnit;
-      section = 0;
-      digitBuffer = null;
-      continue;
-    }
-
-    return null;
-  }
-
-  section += digitBuffer ?? 0;
-  const value = total + section;
-  return Number.isFinite(value) ? value : null;
-};
-
-const normalizeChineseNumberToken = (token: string) => {
-  const prefixed = token.match(CHINESE_HEADING_WITH_PREFIX_REGEX);
-  if (prefixed) {
-    const parsed = parseChineseNumeralSequence(prefixed[1]);
-    if (parsed !== null) {
-      return `第${parsed}${prefixed[2] || ''}`;
-    }
-  }
-
-  const suffixed = token.match(CHINESE_HEADING_WITH_SUFFIX_REGEX);
-  if (suffixed) {
-    const parsed = parseChineseNumeralSequence(suffixed[1]);
-    if (parsed !== null) {
-      return `${parsed}${suffixed[2]}`;
-    }
-  }
-
-  const standalone = parseChineseNumeralSequence(token);
-  if (standalone !== null) {
-    return String(standalone);
-  }
-
-  return token;
-};
-
-const convertChineseNumberTokens = (tokens: string[]) => tokens.map(normalizeChineseNumberToken);
-
-const parseRomanNumeralToken = (raw: string): number | null => {
-  const token = raw.trim().toLowerCase();
-  if (!token || !ROMAN_NUMERAL_CHAR_REGEX.test(token)) return null;
-  if (!ROMAN_NUMERAL_VALIDATION_REGEX.test(token)) return null;
-
-  let total = 0;
-  for (let index = 0; index < token.length; index += 1) {
-    const current = ROMAN_NUMERAL_VALUE_BY_CHAR[token[index]];
-    const next = index < token.length - 1 ? ROMAN_NUMERAL_VALUE_BY_CHAR[token[index + 1]] : 0;
-    if (next > current) {
-      total -= current;
-    } else {
-      total += current;
-    }
-  }
-
-  return total > 0 ? total : null;
-};
-
-const convertRomanNumberTokens = (tokens: string[]) =>
-  tokens.map((token) => {
-    const parsed = parseRomanNumeralToken(token);
-    return parsed === null ? token : String(parsed);
-  });
-
-const normalizeComparableText = (raw: string) => {
-  const tokens = tokenizeComparableHeading(raw);
-  if (tokens.length === 0) return '';
-  return convertEnglishNumberTokens(convertRomanNumberTokens(convertChineseNumberTokens(tokens))).join(' ');
-};
-
-const isEquivalentHeadingText = (left: string, right: string) => {
-  const normalizedLeft = normalizeComparableText(left);
-  const normalizedRight = normalizeComparableText(right);
-  if (!normalizedLeft || !normalizedRight) return false;
-  return normalizedLeft === normalizedRight;
-};
-
-const shouldConsiderAsShortHeadingLine = (raw: string) => {
-  const trimmed = raw.trim();
-  if (!trimmed) return false;
-  if (trimmed.length > 80) return false;
-  if (HEADING_SENTENCE_PUNCTUATION_REGEX.test(trimmed)) return false;
-  return true;
-};
-
-const resolveLeadingDuplicateTitleParagraphCount = (paragraphs: string[], chapterTitle: string) => {
-  if (paragraphs.length === 0 || !chapterTitle) return 0;
-  if (isEquivalentHeadingText(paragraphs[0], chapterTitle)) return 1;
-
-  if (paragraphs.length < 2) return 0;
-  if (!shouldConsiderAsShortHeadingLine(paragraphs[0])) return 0;
-  if (!shouldConsiderAsShortHeadingLine(paragraphs[1])) return 0;
-
-  const combinedHeading = `${paragraphs[0]} ${paragraphs[1]}`.trim();
-  return isEquivalentHeadingText(combinedHeading, chapterTitle) ? 2 : 0;
-};
-
-const dropLeadingDuplicateTitleParagraph = (paragraphs: string[], chapterTitle: string) => {
-  const removeCount = resolveLeadingDuplicateTitleParagraphCount(paragraphs, chapterTitle);
-  if (removeCount <= 0) return paragraphs;
-  return paragraphs.slice(removeCount);
-};
-
-const normalizeReaderLayoutText = (raw: string) => splitReaderParagraphs(raw).join('\n');
 
 const sanitizeFontFamily = (raw: string) => {
   const trimmed = raw.trim();
@@ -961,6 +649,81 @@ const safeReleasePointerCapture = (element: PointerCaptureElement, pointerId: nu
   }
 };
 
+const HighlightChapterDropdown = ({
+  value,
+  options,
+  onChange,
+  isDarkMode,
+}: {
+  value: string | null;
+  options: { value: string; label: string }[];
+  onChange: (val: string | null) => void;
+  isDarkMode: boolean;
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const handleClose = () => {
+    if (!isOpen || isClosing) return;
+    setIsClosing(true);
+    setTimeout(() => { setIsOpen(false); setIsClosing(false); }, 200);
+  };
+
+  const handleToggle = () => {
+    if (isOpen) { handleClose(); } else { setIsOpen(true); }
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        handleClose();
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen, isClosing]);
+
+  const selectedLabel = value
+    ? options.find(o => o.value === value)?.label || value
+    : '\u6240\u6709\u7ae0\u8282';
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <div
+        onClick={handleToggle}
+        className={`w-full h-8 rounded-xl flex items-center justify-between cursor-pointer px-2.5 text-[11px] font-medium transition-all active:scale-[0.99] ${
+          isDarkMode ? 'bg-[#1a202c] text-slate-300' : 'neu-pressed text-slate-600'
+        }`}
+      >
+        <span className="truncate">{selectedLabel}</span>
+        <ChevronDown size={13} className={`opacity-50 transition-transform duration-200 ${isOpen && !isClosing ? 'rotate-180' : ''}`} />
+      </div>
+      {(isOpen || isClosing) && (
+        <div className={`absolute top-full left-0 right-0 mt-1 p-1 rounded-xl z-10 max-h-32 overflow-y-auto border border-slate-400/10 shadow-lg ${
+          isDarkMode ? 'bg-[#2d3748]' : 'bg-[#e0e5ec]'
+        } ${isClosing ? 'reader-flyout-exit' : 'reader-flyout-enter'}`}>
+          <div
+            onClick={() => { onChange(null); handleClose(); }}
+            className={`px-2.5 py-1.5 rounded-lg text-[11px] cursor-pointer transition-colors ${
+              !value ? 'text-rose-400 font-bold bg-rose-400/10' : isDarkMode ? 'text-slate-300 hover:bg-slate-600' : 'text-slate-600 hover:bg-black/5'
+            }`}
+          >{'\u6240\u6709\u7ae0\u8282'}</div>
+          {options.map(opt => (
+            <div
+              key={opt.value}
+              onClick={() => { onChange(opt.value); handleClose(); }}
+              className={`px-2.5 py-1.5 rounded-lg text-[11px] cursor-pointer transition-colors truncate ${
+                value === opt.value ? 'text-rose-400 font-bold bg-rose-400/10' : isDarkMode ? 'text-slate-300 hover:bg-slate-600' : 'text-slate-600 hover:bg-black/5'
+              }`}
+            >{opt.label}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Reader: React.FC<ReaderProps> = ({
   onBack,
   isDarkMode,
@@ -983,6 +746,8 @@ const Reader: React.FC<ReaderProps> = ({
   ttsConfig,
   ttsPresets,
   setTtsConfig,
+  pendingHighlightJump,
+  onClearPendingHighlightJump,
 }) => {
   const [activeFloatingPanel, setActiveFloatingPanel] = useState<FloatingPanel>('none');
   const [closingFloatingPanel, setClosingFloatingPanel] = useState<FloatingPanel | null>(null);
@@ -996,6 +761,10 @@ const Reader: React.FC<ReaderProps> = ({
   const [bookmarks, setBookmarks] = useState<ReaderBookmark[]>([]);
   const [selectedBookmarkId, setSelectedBookmarkId] = useState<string | null>(null);
   const [tocPanelTab, setTocPanelTab] = useState<TocPanelTab>('toc');
+  const [highlightColorFilter, setHighlightColorFilter] = useState<string | null>(null);
+  const [highlightChapterFilter, setHighlightChapterFilter] = useState<string | null>(null);
+  const [highlightCopyToast, setHighlightCopyToast] = useState(false);
+  const highlightCopyToastTimerRef = useRef<number | null>(null);
   const [isBookmarkModalOpen, setIsBookmarkModalOpen] = useState(false);
   const [isBookmarkModalClosing, setIsBookmarkModalClosing] = useState(false);
   const [bookmarkNameDraft, setBookmarkNameDraft] = useState('');
@@ -2035,6 +1804,16 @@ const Reader: React.FC<ReaderProps> = ({
     };
   }, [activeBook?.id]);
 
+  // Consume pending highlight jump from StudyHub cross-view navigation
+  useEffect(() => {
+    if (!pendingHighlightJump || !activeBook || pendingHighlightJump.bookId !== activeBook.id) return;
+    if (!isReaderStateHydrated || hydratedBookId !== activeBook.id) return;
+    const chapterKey = pendingHighlightJump.chapterIndex === null ? 'full' : `chapter-${pendingHighlightJump.chapterIndex}`;
+    const position = buildPositionFromHighlight(chapterKey, pendingHighlightJump.charOffset, chapters, bookText.length);
+    jumpToReadingPosition(position);
+    onClearPendingHighlightJump?.();
+  }, [pendingHighlightJump, activeBook?.id, isReaderStateHydrated, hydratedBookId]);
+
   useEffect(() => {
     if (!activeBook?.id) {
       setAiUnderlineRangesByChapter({});
@@ -2055,6 +1834,7 @@ const Reader: React.FC<ReaderProps> = ({
     selectedReaderFontId,
     readerTypography.fontSizePx,
     readerTypography.lineHeight,
+    isRestorePositionPending,
   ]);
 
   useEffect(() => {
@@ -2096,6 +1876,7 @@ const Reader: React.FC<ReaderProps> = ({
     selectedReaderFontId,
     readerTypography.fontSizePx,
     readerTypography.lineHeight,
+    isRestorePositionPending,
   ]);
 
   useLayoutEffect(() => {
@@ -2640,6 +2421,31 @@ const Reader: React.FC<ReaderProps> = ({
 
   const readerTextForHighlighting = useMemo(() => paragraphs.join('\n'), [paragraphs]);
 
+  // ── Highlights collection memos ──
+
+  const totalHighlightCount = useMemo(() => {
+    let count = 0;
+    for (const key of Object.keys(highlightRangesByChapter)) {
+      count += highlightRangesByChapter[key]?.length || 0;
+    }
+    return count;
+  }, [highlightRangesByChapter]);
+
+  const resolvedHighlights = useMemo(() => {
+    return resolveHighlightItems(highlightRangesByChapter, chapters, bookText);
+  }, [highlightRangesByChapter, chapters, bookText]);
+
+  const filteredHighlights = useMemo(() => {
+    let items = resolvedHighlights;
+    if (highlightColorFilter) {
+      items = items.filter(item => item.range.color === highlightColorFilter);
+    }
+    if (highlightChapterFilter) {
+      items = items.filter(item => item.chapterKey === highlightChapterFilter);
+    }
+    return items;
+  }, [resolvedHighlights, highlightColorFilter, highlightChapterFilter]);
+
   // Persist reader state on page unload (app close / tab close while reading)
   useEffect(() => {
     const handlePageHide = () => {
@@ -2895,6 +2701,39 @@ const Reader: React.FC<ReaderProps> = ({
     setSelectedBookmarkId((prev) => (prev === bookmarkId ? null : prev));
   };
 
+  // ── Highlight collection handlers ──
+
+  const handleJumpToHighlight = (item: ResolvedHighlightItem) => {
+    const position = buildPositionFromHighlight(
+      item.chapterKey, item.range.start, chapters, bookText.length,
+    );
+    jumpToReadingPosition(position);
+  };
+
+  const handleDeleteHighlight = (item: ResolvedHighlightItem) => {
+    setHighlightRangesByChapter(prev => {
+      const existing = prev[item.chapterKey] || [];
+      const updated = existing.filter(
+        r => !(r.start === item.range.start && r.end === item.range.end && r.color === item.range.color)
+      );
+      if (updated.length === 0) {
+        const next = { ...prev };
+        delete next[item.chapterKey];
+        return next;
+      }
+      return { ...prev, [item.chapterKey]: updated };
+    });
+  };
+
+  const handleCopyHighlightText = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setHighlightCopyToast(true);
+      if (highlightCopyToastTimerRef.current) window.clearTimeout(highlightCopyToastTimerRef.current);
+      highlightCopyToastTimerRef.current = window.setTimeout(() => setHighlightCopyToast(false), 1500);
+    } catch { /* ignore */ }
+  };
+
   const handleBookmarkButtonClick = () => {
     if (!activeBook || isLoadingBookContent) return;
     openBookmarkModal();
@@ -2902,6 +2741,13 @@ const Reader: React.FC<ReaderProps> = ({
 
   const switchTocTab = (tab: TocPanelTab) => {
     setTocPanelTab(tab);
+    if (tab !== 'highlights') {
+      setHighlightColorFilter(null);
+      setHighlightChapterFilter(null);
+    }
+    if (tab === 'highlights' && tocListRef.current) {
+      tocListRef.current.scrollTop = 0;
+    }
   };
 
   const handleTocPanelTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
@@ -4567,21 +4413,23 @@ const Reader: React.FC<ReaderProps> = ({
             <div
               onTouchStart={handleTocPanelTouchStart}
               onTouchEnd={handleTocPanelTouchEnd}
-              className={`absolute z-50 right-4 w-[min(22rem,calc(100vw-2rem))] max-h-[32vh] overflow-hidden rounded-2xl p-2 border ${isDarkMode ? 'bg-[#2d3748] border-slate-600 shadow-2xl' : 'bg-[#e0e5ec] border-white/50 shadow-2xl'} ${closingFloatingPanel === 'toc' ? 'reader-flyout-exit' : 'reader-flyout-enter'} flex flex-col`}
+              className={`absolute z-50 right-4 w-[min(22rem,calc(100vw-2rem))] h-[32vh] overflow-hidden rounded-2xl p-2 border ${isDarkMode ? 'bg-[#2d3748] border-slate-600 shadow-2xl' : 'bg-[#e0e5ec] border-white/50 shadow-2xl'} ${closingFloatingPanel === 'toc' ? 'reader-flyout-exit' : 'reader-flyout-enter'} flex flex-col`}
               style={floatingPanelAnchorStyle}
             >
               <div className="px-1 pb-2">
                 <div className={`rounded-xl p-1 ${isDarkMode ? 'bg-[#1a202c]' : 'neu-pressed'}`}>
-                  <div className="grid grid-cols-2 gap-1">
+                  <div className="relative grid grid-cols-3">
+                    <div
+                      className="pointer-events-none absolute inset-y-0 left-0 w-1/3 transition-transform duration-300"
+                      style={{ transform: `translateX(${(tocPanelTab === 'toc' ? 0 : tocPanelTab === 'bookmarks' ? 1 : 2) * 100}%)` }}
+                    >
+                      <div className="h-full mx-[2px] rounded-lg bg-rose-400/10" />
+                    </div>
                     <button
                       type="button"
                       onClick={() => switchTocTab('toc')}
-                      className={`h-8 rounded-lg text-xs font-bold transition-all ${
-                        tocPanelTab === 'toc'
-                          ? 'text-rose-400 bg-rose-400/10'
-                          : isDarkMode
-                          ? 'text-slate-300 hover:text-white'
-                          : 'text-slate-500 hover:text-slate-700'
+                      className={`relative z-10 h-8 rounded-lg text-xs font-bold transition-colors ${
+                        tocPanelTab === 'toc' ? 'text-rose-400' : isDarkMode ? 'text-slate-300 hover:text-white' : 'text-slate-500 hover:text-slate-700'
                       }`}
                     >
                       {`\u76ee\u5f55 ${chapters.length > 0 ? `(${chapters.length})` : ''}`}
@@ -4589,22 +4437,26 @@ const Reader: React.FC<ReaderProps> = ({
                     <button
                       type="button"
                       onClick={() => switchTocTab('bookmarks')}
-                      className={`h-8 rounded-lg text-xs font-bold transition-all ${
-                        tocPanelTab === 'bookmarks'
-                          ? 'text-rose-400 bg-rose-400/10'
-                          : isDarkMode
-                          ? 'text-slate-300 hover:text-white'
-                          : 'text-slate-500 hover:text-slate-700'
+                      className={`relative z-10 h-8 rounded-lg text-xs font-bold transition-colors ${
+                        tocPanelTab === 'bookmarks' ? 'text-rose-400' : isDarkMode ? 'text-slate-300 hover:text-white' : 'text-slate-500 hover:text-slate-700'
                       }`}
                     >
                       {`\u4e66\u7b7e ${sortedBookmarks.length > 0 ? `(${sortedBookmarks.length})` : ''}`}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => switchTocTab('highlights')}
+                      className={`relative z-10 h-8 rounded-lg text-xs font-bold transition-colors ${
+                        tocPanelTab === 'highlights' ? 'text-rose-400' : isDarkMode ? 'text-slate-300 hover:text-white' : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      {`\u9ad8\u4eae ${totalHighlightCount > 0 ? `(${totalHighlightCount})` : ''}`}
                     </button>
                   </div>
                 </div>
               </div>
               <div ref={tocListRef} className="flex-1 overflow-y-auto no-scrollbar px-1 pb-1">
-                {tocPanelTab === 'toc' && (
-                  <>
+                <div style={{ display: tocPanelTab === 'toc' ? undefined : 'none' }}>
                     {chapters.length === 0 && (
                       <div className="text-xs text-slate-400 px-2 py-3">{'\u5f53\u524d\u56fe\u4e66\u6ca1\u6709\u7ae0\u8282\u6570\u636e\uff0c\u5df2\u6309\u5168\u6587\u9605\u8bfb\u3002'}</div>
                     )}
@@ -4629,10 +4481,8 @@ const Reader: React.FC<ReaderProps> = ({
                         </button>
                       );
                     })}
-                  </>
-                )}
-                {tocPanelTab === 'bookmarks' && (
-                  <>
+                </div>
+                <div style={{ display: tocPanelTab === 'bookmarks' ? undefined : 'none' }}>
                     {sortedBookmarks.length === 0 && (
                       <div className="text-xs text-slate-400 px-2 py-3">{'\u8fd8\u6ca1\u6709\u4e66\u7b7e\uff0c\u70b9\u51fb\u9876\u90e8\u4e66\u7b7e\u6309\u94ae\u5373\u53ef\u65b0\u589e\u3002'}</div>
                     )}
@@ -4681,8 +4531,103 @@ const Reader: React.FC<ReaderProps> = ({
                         </div>
                       );
                     })}
-                  </>
-                )}
+                </div>
+                <div style={{ display: tocPanelTab === 'highlights' ? undefined : 'none' }}>
+                    {/* Color filter chips */}
+                    <div className="flex items-center gap-1.5 px-2 pb-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setHighlightColorFilter(null)}
+                        className={`h-6 px-2 rounded-full text-[10px] font-bold transition-all ${
+                          !highlightColorFilter
+                            ? 'text-rose-400 bg-rose-400/10'
+                            : isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500'
+                        }`}
+                      >
+                        {'全部'}
+                      </button>
+                      {PRESET_HIGHLIGHT_COLORS.map(color => {
+                        const count = resolvedHighlights.filter(h => h.range.color === color).length;
+                        if (count === 0) return null;
+                        return (
+                          <button
+                            key={color}
+                            type="button"
+                            onClick={() => setHighlightColorFilter(highlightColorFilter === color ? null : color)}
+                            className={`w-4 h-4 rounded-full border-2 transition-all ${
+                              highlightColorFilter === color ? 'border-rose-400 scale-110' : 'border-transparent'
+                            }`}
+                            style={{ backgroundColor: color }}
+                            title={`${count} 条`}
+                          />
+                        );
+                      })}
+                    </div>
+                    {/* Chapter filter dropdown */}
+                    {chapters.length > 1 && (
+                      <div className="px-2 pb-2">
+                        <HighlightChapterDropdown
+                          value={highlightChapterFilter}
+                          options={chapters.map((ch, idx) => ({
+                            value: `chapter-${idx}`,
+                            label: ch.title?.trim() || `第${idx + 1}章`,
+                          }))}
+                          onChange={setHighlightChapterFilter}
+                          isDarkMode={isDarkMode}
+                        />
+                      </div>
+                    )}
+                    {/* Highlight cards */}
+                    {filteredHighlights.length === 0 && (
+                      <div className="text-xs text-slate-400 px-2 py-3">
+                        {'\u8fd8\u6ca1\u6709\u9ad8\u4eae\uff0c\u5728\u9605\u8bfb\u65f6\u957f\u6309\u6587\u5b57\u5373\u53ef\u6dfb\u52a0\u3002'}
+                      </div>
+                    )}
+                    {filteredHighlights.map(item => (
+                      <div key={item.id} className="flex items-start gap-2 px-2 py-1.5">
+                        <div
+                          className="w-1 self-stretch rounded-full flex-shrink-0 mt-0.5"
+                          style={{ backgroundColor: item.range.color }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleJumpToHighlight(item)}
+                          className={`flex-1 text-left min-w-0 ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}
+                        >
+                          <div className="text-xs line-clamp-2 leading-relaxed">{item.text}</div>
+                          <div className="text-[10px] opacity-50 mt-0.5">{item.chapterTitle}</div>
+                        </button>
+                        <div className="flex flex-col gap-0.5 flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); handleCopyHighlightText(item.text); }}
+                            className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
+                              isDarkMode ? 'text-slate-400 hover:text-white hover:bg-[#1a202c]' : 'text-slate-400 hover:text-slate-600 hover:bg-black/5'
+                            }`}
+                            title={'\u590d\u5236'}
+                          >
+                            <Copy size={12} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); handleDeleteHighlight(item); }}
+                            className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
+                              isDarkMode ? 'text-slate-400 hover:text-rose-300 hover:bg-[#1a202c]' : 'text-slate-500 hover:text-rose-400 hover:bg-black/5'
+                            }`}
+                            title={'\u5220\u9664\u9ad8\u4eae'}
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {/* Copy toast */}
+                    {highlightCopyToast && (
+                      <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[999] px-4 py-2 rounded-xl text-xs font-bold text-white bg-black/70 shadow-lg pointer-events-none">
+                        {'\u5df2\u590d\u5236\u5230\u526a\u8d34\u677f'}
+                      </div>
+                    )}
+                </div>
               </div>
             </div>
           )}

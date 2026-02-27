@@ -8,7 +8,8 @@
       "Bash(npm install:*)",
       "WebFetch(domain:hf-mirror.com)",
       "Bash(curl:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(wc -l /c/Users/DELL/Downloads/ai-陪读伴侣/components/*.tsx)"
     ]
   }
 }

@@ -12,7 +12,7 @@ import {
 
 export const BUILT_IN_TUTORIAL_BOOK_ID = '__built_in_tutorial__';
 /** Bump this number whenever tutorial content is changed so existing users get the update. */
-export const BUILT_IN_TUTORIAL_VERSION = 3.7;
+export const BUILT_IN_TUTORIAL_VERSION = 3.8;
 
 const TUTORIAL_UNREAD_KEY = '__built_in_tutorial_unread__';
 export const isTutorialUnread = (): boolean => {
@@ -36,6 +36,19 @@ const img = (imageRef: string, alt: string, w?: number, h?: number): ReaderConte
 /*  更新记录                                                            */
 /* ------------------------------------------------------------------ */
 const CH0_CONTENT = `更新记录
+
+-更新时间：2026.02.27
+
+本次更新内容：
+
+1.书籍和聊天记录总结卡片新增同时合并精简选项
+选择多个总结卡片后，除了简单拼接合并，还可以让AI帮忙合并压缩这些总结段落。
+
+2.阅读界面顶部目录浮窗新增高亮tab
+可查看本书籍的所有高亮段落，可用颜色章节筛选，点击即可跳转到高亮段落所在处。
+
+3.共读集界面新增摘录tab
+可查看所有书籍的所有高亮段落，点击可显示完整内容，支持复制，删除，跳转。
 
 -更新时间：2026.02.26
 
@@ -89,6 +102,17 @@ const CH0_CONTENT = `更新记录
 
 const CH0_BLOCKS: ReaderContentBlock[] = [
   text('更新记录'),
+  text(`-更新时间：2026.02.27`),
+  text(`本次更新内容：
+
+1.书籍和聊天记录总结卡片新增同时合并精简选项
+选择多个总结卡片后，除了简单拼接合并，还可以让AI帮忙合并压缩这些总结段落。
+
+2.阅读界面顶部目录浮窗新增高亮tab
+可查看本书籍的所有高亮段落，可用颜色章节筛选，点击即可跳转到高亮段落所在处。
+
+3.共读集界面新增摘录tab
+可查看所有书籍的所有高亮段落，点击可显示完整内容，支持复制，删除，跳转。`),
   text(`-更新时间：2026.02.26`),
   text(`本次更新内容：
 

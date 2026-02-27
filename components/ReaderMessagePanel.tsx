@@ -1726,6 +1726,120 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
     [applyBookSummaryCards, persistBookSummaryLocal, showToast]
   );
 
+  const condenseMergeCards = useCallback(
+    async (
+      kind: SummaryTaskKind,
+      cardIds: string[],
+      cardsRef: React.MutableRefObject<ReaderSummaryCard[]>,
+      applyCards: (cards: ReaderSummaryCard[]) => void,
+      persistFn?: (cards: ReaderSummaryCard[]) => void,
+    ) => {
+      const targetIds = new Set(cardIds.filter(Boolean));
+      if (targetIds.size < 2) {
+        showToast('请至少选择两张总结卡片', 'info');
+        return;
+      }
+      const allCards = cardsRef.current;
+      const selected = allCards
+        .filter((c) => targetIds.has(c.id))
+        .sort(sortSummaryCardsByRange);
+      if (selected.length < 2) {
+        showToast('请至少选择两张总结卡片', 'info');
+        return;
+      }
+
+      if (readerMoreFeature.summaryApiEnabled && !selectedSummaryApiPreset) {
+        showToast('请先在 API 设置中保存并选择总结副 API 预设', 'error');
+        return;
+      }
+
+      const mergedContent = selected.map((c) => c.content.trim()).filter(Boolean).join('\n\n');
+      if (!mergedContent) return;
+
+      setSummaryTaskRunning(true);
+      try {
+        const prompt = kind === 'chat'
+          ? [
+              `你是${characterRealName}，正在整理和${userNickname}的聊天回忆。`,
+              '',
+              '【任务】用你自己的视角，将以下多段聊天回忆精简合并为一段连贯的回忆。',
+              '',
+              '【格式要求】',
+              '- 开头固定写合并后的时间跨度：[YYYY/MM/DD HH:mm - YYYY/MM/DD HH:mm],',
+              '- 紧接一段精简后的总结。',
+              `- 用「我」指代自己，用「${userNickname}」指代对方。`,
+              '- 写成一段连贯的话，不要用列表、编号或分点。',
+              '- 保留所有关键事件和重要细节，去除重复内容。',
+              '- 语言凝练，总字数控制在原文的 50%-70%。',
+              '- 严格基于原文内容，禁止编造事实妄加揣测。',
+              '',
+              '【以下为需要精简合并的回忆】',
+              mergedContent,
+            ].join('\n')
+          : [
+              '【任务】将以下多段总结精简合并为一段连贯的总结。',
+              '',
+              '【要求】',
+              '- 保留所有关键信息和重要细节，去除重复内容。',
+              '- 如果原文有【】标题，合并后仍然使用【】分段，但可以合并相近的段落。',
+              '- 语言凝练，总字数控制在原文的 50%-70%。',
+              '- 严格基于原文内容，禁止添加原文没有的信息。',
+              '',
+              '【以下为需要精简合并的总结】',
+              mergedContent,
+            ].join('\n');
+
+        const condensed = await callSummaryModel(prompt, summaryApiConfig);
+        const trimmed = condensed.trim();
+        if (!trimmed) throw new Error('精简结果为空');
+
+        const now = Date.now();
+        const mergedCard: ReaderSummaryCard = {
+          id: `summary-condense-${now}-${Math.random().toString(36).slice(2, 8)}`,
+          content: trimmed,
+          start: Math.min(...selected.map((c) => c.start)),
+          end: Math.max(...selected.map((c) => c.end)),
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        const nextCards = [...allCards.filter((c) => !targetIds.has(c.id)), mergedCard].sort(sortSummaryCardsByRange);
+        applyCards(nextCards);
+        persistFn?.(nextCards);
+        showToast('合并精简完成', 'success');
+      } catch (error) {
+        console.error('Condense merge failed', error);
+        showToast(error instanceof Error ? error.message : '合并精简失败', 'error');
+      } finally {
+        setSummaryTaskRunning(false);
+      }
+    },
+    [readerMoreFeature.summaryApiEnabled, selectedSummaryApiPreset, summaryApiConfig, showToast, characterRealName, userNickname]
+  );
+
+  const handleCondenseMergeChatSummaryCards = useCallback(
+    (cardIds: string[]) => {
+      void condenseMergeCards('chat', cardIds, chatSummaryCardsRef, applyChatSummaryCards);
+    },
+    [condenseMergeCards, applyChatSummaryCards]
+  );
+
+  const handleCondenseMergeBookSummaryCards = useCallback(
+    (cardIds: string[]) => {
+      void condenseMergeCards(
+        'book',
+        cardIds,
+        bookSummaryCardsRef,
+        applyBookSummaryCards,
+        (nextCards) => persistBookSummaryLocal({
+          cards: nextCards,
+          autoLastEnd: bookAutoSummaryLastEndRef.current,
+        }),
+      );
+    },
+    [condenseMergeCards, applyBookSummaryCards, persistBookSummaryLocal]
+  );
+
   const scrollMessagesToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
     if (!messagesContainerRef.current) return;
     messagesContainerRef.current.scrollTo({
@@ -3265,6 +3379,8 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
         onDeleteChatSummaryCard={handleDeleteChatSummaryCard}
         onMergeBookSummaryCards={handleMergeBookSummaryCards}
         onMergeChatSummaryCards={handleMergeChatSummaryCards}
+        onCondenseMergeBookSummaryCards={handleCondenseMergeBookSummaryCards}
+        onCondenseMergeChatSummaryCards={handleCondenseMergeChatSummaryCards}
         onRequestManualBookSummary={handleRequestManualBookSummary}
         onRequestManualChatSummary={handleRequestManualChatSummary}
         currentReadCharOffset={Math.max(0, getLatestReadingPosition()?.globalCharOffset || 0)}

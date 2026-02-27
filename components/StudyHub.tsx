@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Plus, ArrowLeft, Search, X, Filter, Trash2, MessageCircle,
   Send, ChevronLeft, ChevronRight, Check, RotateCcw, HelpCircle,
   Loader2, BookMarked, CheckCircle2, NotebookPen, CircleCheckBig,
   BookPlus, UserCircle, Edit2, Link, FileUp, ChevronDown, Feather, Scroll,
   Heading1, Heading2, Heading3, Pilcrow, Bold, Italic, ListOrdered, List as ListIcon,
-  Save, Eraser,
+  Save, Eraser, Highlighter, Copy, ExternalLink,
 } from 'lucide-react';
 import {
   Book, ApiConfig, RagApiConfigResolver, Notebook, StudyNote, StudyNoteCommentThread,
@@ -25,7 +25,9 @@ import {
   parseStudyHubAiComment, getReadingGlobalCharOffset,
 } from '../utils/studyHubAiEngine';
 import { callAiModel, sanitizeTextForAiPrompt } from '../utils/readerAiEngine';
-import { getBookContent } from '../utils/bookContentStorage';
+import { getBookContent, saveBookReaderState } from '../utils/bookContentStorage';
+import { PRESET_HIGHLIGHT_COLORS, resolveHighlightItems } from '../utils/highlightUtils';
+import type { ResolvedHighlightItem } from '../utils/highlightUtils';
 import { estimateRagSafeOffset, retrieveRelevantChunks, isEmbedModelLoaded } from '../utils/ragEngine';
 import { DEFAULT_PAPER_CSS_PRESETS, DEFAULT_PAPER_CSS_PRESET_ID, normalizeLegacyPaperCss } from '../utils/paperCssPresets';
 
@@ -42,9 +44,10 @@ interface StudyHubProps {
   readingContextIgnorePanelClip: boolean;
   showNotification: (message: string, type?: 'success' | 'error') => void;
   ragApiConfigResolver?: RagApiConfigResolver;
+  onJumpToBookHighlight?: (bookId: string, chapterIndex: number | null, charOffset: number) => void;
 }
 
-type HubTab = 'notes' | 'quiz';
+type HubTab = 'notes' | 'quiz' | 'highlights';
 type NotesView = 'list' | 'detail' | 'editor';
 type QuizView = 'history' | 'config' | 'play' | 'result';
 type NoteBlockStyleTag = 'p' | 'h1' | 'h2' | 'h3';
@@ -122,6 +125,144 @@ const PAPER_CSS_PLACEHOLDER = `可用类名：
 iOS提示：li/strong等可编辑元素请勿
 用 ::before/::after 伪元素，建议改
 用 background-image 等元素自身属性`;
+
+// ── Highlight book multi-select dropdown (matches MultiSelectDropdown style) ──
+const HighlightBookMultiSelect = ({
+  entries, selected, onToggle, onClear, inputClass, cardClass, isDarkMode,
+}: {
+  entries: Array<{ bookId: string; bookTitle: string; items: { id: string }[] }>;
+  selected: string[];
+  onToggle: (bookId: string) => void;
+  onClear: () => void;
+  inputClass: string;
+  cardClass: string;
+  isDarkMode: boolean;
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const handleClose = () => {
+    if (!isOpen || isClosing) return;
+    setIsClosing(true);
+    setTimeout(() => { setIsOpen(false); setIsClosing(false); }, 200);
+  };
+
+  const handleToggle = () => {
+    if (isOpen) { handleClose(); } else { setIsOpen(true); }
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        handleClose();
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen, isClosing]);
+
+  const selectedTitles = entries.filter(e => selected.includes(e.bookId));
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <div
+        onClick={handleToggle}
+        className={`w-full p-2 h-[42px] rounded-xl flex items-center justify-between cursor-pointer transition-all active:scale-[0.99] ${inputClass}`}
+      >
+        <div className="flex gap-1.5 w-full pr-6 overflow-hidden">
+          {selected.length === 0 && <span className="text-sm opacity-50 px-2 whitespace-nowrap">{'所有书籍'}</span>}
+          {selectedTitles.map(entry => (
+            <span key={entry.bookId} className="bg-rose-400 text-white text-xs px-2 py-1 rounded-lg flex items-center gap-1 shrink-0 max-w-[7rem]">
+              <span className="truncate">{entry.bookTitle}</span>
+              <span
+                onClick={(e) => { e.stopPropagation(); onToggle(entry.bookId); }}
+                className="hover:text-rose-100 cursor-pointer shrink-0"
+              >
+                <X size={10} />
+              </span>
+            </span>
+          ))}
+        </div>
+        <div className="absolute right-3 opacity-50">
+          <ChevronDown size={16} className={`transition-transform duration-200 ${isOpen && !isClosing ? 'rotate-180' : ''}`} />
+        </div>
+      </div>
+      {(isOpen || isClosing) && (
+        <div className={`absolute top-full left-0 right-0 mt-2 rounded-xl z-[100] max-h-52 flex flex-col ${cardClass} border border-slate-400/10 shadow-2xl ${isClosing ? 'reader-flyout-exit' : 'reader-flyout-enter'}`}>
+          <div className="px-2 pt-2 pb-1 border-b border-slate-400/10 flex-shrink-0 flex items-center justify-between">
+            <button
+              onClick={() => { if (selected.length > 0) { onClear(); handleClose(); } }}
+              className={`text-[11px] ${selected.length > 0 ? 'text-rose-400 hover:underline cursor-pointer' : 'text-slate-400/50 cursor-default'}`}
+            >
+              {'清除筛选'}
+            </button>
+            <span className="text-[10px] text-slate-400">{'已选 '}{selected.length}{' 项'}</span>
+          </div>
+          <div className="p-2 overflow-y-auto flex-1">
+          {entries.map(entry => (
+            <div
+              key={entry.bookId}
+              onClick={() => onToggle(entry.bookId)}
+              className={`flex items-center gap-2 p-2 rounded-lg text-sm cursor-pointer transition-colors ${
+                selected.includes(entry.bookId)
+                  ? 'text-rose-400 font-bold bg-rose-400/10'
+                  : isDarkMode ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <div className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${
+                selected.includes(entry.bookId) ? 'bg-rose-400 border-rose-400' : 'border-slate-400'
+              }`}>
+                {selected.includes(entry.bookId) && <Check size={10} className="text-white" />}
+              </div>
+              <span className="truncate">{entry.bookTitle} ({entry.items.length})</span>
+            </div>
+          ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── Expandable highlight text with smooth height transition ──
+const ExpandableHighlightText = ({ text, isExpanded, isDarkMode }: {
+  text: string; isExpanded: boolean; isDarkMode: boolean;
+}) => {
+  const ref = useRef<HTMLDivElement>(null);
+  // 3 lines at text-sm (14px) × leading-relaxed (1.625) = 68.25px
+  const collapsedPx = 68;
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (isExpanded) {
+      el.style.maxHeight = el.scrollHeight + 'px';
+    } else {
+      // Set to current scrollHeight, force reflow, then collapse — gives browser two concrete px values to transition between
+      el.style.maxHeight = el.scrollHeight + 'px';
+      el.offsetHeight; // force reflow
+      el.style.maxHeight = collapsedPx + 'px';
+    }
+  }, [isExpanded]);
+
+  const paragraphs = text.split('\n').filter(p => p.trim());
+  const isMultiPara = paragraphs.length > 1;
+
+  return (
+    <div
+      ref={ref}
+      className={`text-sm leading-relaxed overflow-hidden transition-[max-height] duration-300 ease-in-out ${
+        isDarkMode ? 'text-slate-200' : 'text-slate-700'
+      }`}
+      style={{ maxHeight: collapsedPx + 'px' }}
+    >
+      {isMultiPara ? paragraphs.map((p, i) => (
+        <p key={i} className={i > 0 ? 'mt-2' : ''} style={{ textIndent: '2em' }}>{p}</p>
+      )) : text}
+    </div>
+  );
+};
 
 interface PaperCssOptionItem {
   value: string;
@@ -213,6 +354,7 @@ const StudyHub: React.FC<StudyHubProps> = ({
   isDarkMode, books, personas, activePersonaId, characters,
   activeCharacterId, worldBookEntries, apiConfig, readingExcerptCharCount,
   readingContextIgnorePanelClip, showNotification, ragApiConfigResolver,
+  onJumpToBookHighlight,
 }) => {
   // ─── Theme classes (matching Library.tsx) ───
   const containerClass = isDarkMode ? 'bg-[#2d3748] text-slate-200' : 'neu-bg text-slate-600';
@@ -238,6 +380,20 @@ const StudyHub: React.FC<StudyHubProps> = ({
 
   // ─── Top-level state ───
   const [activeTab, setActiveTab] = useState<HubTab>('notes');
+  const [renderedTab, setRenderedTab] = useState<HubTab>('notes');
+  const [hubTabAnimClass, setHubTabAnimClass] = useState('');
+  const [isSwitchingHubTab, setIsSwitchingHubTab] = useState(false);
+  const hubTabTimerRef = useRef<number | null>(null);
+  const hubTabUnlockRef = useRef<number | null>(null);
+
+  // ─── Highlights state ───
+  const [highlightsLoading, setHighlightsLoading] = useState(false);
+  const [allBookHighlights, setAllBookHighlights] = useState<
+    Array<{ bookId: string; bookTitle: string; items: ResolvedHighlightItem[] }>
+  >([]);
+  const [hubHighlightColorFilter, setHubHighlightColorFilter] = useState<string | null>(null);
+  const [hubHighlightBookFilter, setHubHighlightBookFilter] = useState<string[]>([]);
+  const [expandedHighlightIds, setExpandedHighlightIds] = useState<Set<string>>(new Set());
 
   // ─── Notes state ───
   const [notesView, setNotesView] = useState<NotesView>('list');
@@ -373,6 +529,43 @@ const StudyHub: React.FC<StudyHubProps> = ({
     void loadData();
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  // ─── Load highlights when switching to highlights tab ───
+  useEffect(() => {
+    if (activeTab !== 'highlights') return;
+    let cancelled = false;
+    const loadAllHighlights = async () => {
+      setHighlightsLoading(true);
+      try {
+        const results: typeof allBookHighlights = [];
+        for (const book of books) {
+          const content = await getBookContent(book.id);
+          if (!content?.readerState?.highlightsByChapter) continue;
+          const items = resolveHighlightItems(
+            content.readerState.highlightsByChapter,
+            content.chapters || [],
+            content.fullText || '',
+          );
+          if (items.length === 0) continue;
+          results.push({ bookId: book.id, bookTitle: book.title, items });
+        }
+        if (!cancelled) setAllBookHighlights(results);
+      } catch (error) {
+        console.error('Failed to load highlights:', error);
+      } finally {
+        if (!cancelled) setHighlightsLoading(false);
+      }
+    };
+    void loadAllHighlights();
+    return () => { cancelled = true; };
+  }, [activeTab, books]);
+
+  useEffect(() => {
+    return () => {
+      if (hubTabTimerRef.current) window.clearTimeout(hubTabTimerRef.current);
+      if (hubTabUnlockRef.current) window.clearTimeout(hubTabUnlockRef.current);
     };
   }, []);
 
@@ -1197,6 +1390,29 @@ const StudyHub: React.FC<StudyHubProps> = ({
       }, QUIZ_VIEW_TRANSITION_MS);
     }, QUIZ_VIEW_TRANSITION_MS);
   }, [isSwitchingQuizView, quizView]);
+
+  // ─── Top-level tab transition (notes / highlights / quiz) ───
+  const HUB_TAB_TRANSITION_MS = 260;
+
+  const switchHubTab = useCallback((nextTab: HubTab) => {
+    setActiveTab(nextTab);
+    if (nextTab === renderedTab && !isSwitchingHubTab) return;
+
+    setIsSwitchingHubTab(true);
+    setHubTabAnimClass('app-view-exit-right');
+
+    if (hubTabTimerRef.current) window.clearTimeout(hubTabTimerRef.current);
+    if (hubTabUnlockRef.current) window.clearTimeout(hubTabUnlockRef.current);
+
+    hubTabTimerRef.current = window.setTimeout(() => {
+      setRenderedTab(nextTab);
+      setHubTabAnimClass('app-view-enter-left');
+      hubTabUnlockRef.current = window.setTimeout(() => {
+        setIsSwitchingHubTab(false);
+        setHubTabAnimClass('');
+      }, HUB_TAB_TRANSITION_MS);
+    }, HUB_TAB_TRANSITION_MS);
+  }, [renderedTab, isSwitchingHubTab]);
 
   // ─── Modal close helpers ───
   const closeCreateModal = () => {
@@ -2314,31 +2530,101 @@ const StudyHub: React.FC<StudyHubProps> = ({
   //  RENDER: Tab Bar (toggle slider style)
   // ══════════════════════════════════════════════
 
-  const renderTabBar = () => (
-    <div className={`relative grid grid-cols-2 rounded-xl p-1 mx-6 overflow-hidden ${pressedClass}`}>
+  // ── Highlight collection handlers ──
+
+  const handleCopyHighlight = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      showNotification('已复制到剪贴板', 'success');
+    } catch { /* ignore */ }
+  };
+
+  const handleDeleteStudyHubHighlight = async (bookId: string, item: ResolvedHighlightItem) => {
+    try {
+      const content = await getBookContent(bookId);
+      if (!content?.readerState?.highlightsByChapter) return;
+      const existing = content.readerState.highlightsByChapter[item.chapterKey] || [];
+      const updated = existing.filter(
+        r => !(r.start === item.range.start && r.end === item.range.end && r.color === item.range.color)
+      );
+      const nextHighlights = { ...content.readerState.highlightsByChapter };
+      if (updated.length === 0) {
+        delete nextHighlights[item.chapterKey];
+      } else {
+        nextHighlights[item.chapterKey] = updated;
+      }
+      await saveBookReaderState(bookId, { ...content.readerState, highlightsByChapter: nextHighlights });
+      setAllBookHighlights(prev =>
+        prev.map(entry => {
+          if (entry.bookId !== bookId) return entry;
+          return { ...entry, items: entry.items.filter(i => i.id !== item.id) };
+        }).filter(entry => entry.items.length > 0)
+      );
+      showNotification('高亮已删除', 'success');
+    } catch {
+      showNotification('删除失败', 'error');
+    }
+  };
+
+  const filteredHighlightGroups = useMemo(
+    () =>
+      allBookHighlights
+        .filter((entry) => hubHighlightBookFilter.length === 0 || hubHighlightBookFilter.includes(entry.bookId))
+        .map((entry) => ({
+          ...entry,
+          items: entry.items.filter(
+            (item) => !hubHighlightColorFilter || item.range.color === hubHighlightColorFilter
+          ),
+        }))
+        .filter((entry) => entry.items.length > 0),
+    [allBookHighlights, hubHighlightBookFilter, hubHighlightColorFilter]
+  );
+
+  const usedHighlightColors = useMemo(() => {
+    const colors = new Set<string>();
+    for (const entry of allBookHighlights) {
+      for (const item of entry.items) {
+        colors.add(item.range.color);
+      }
+    }
+    return colors;
+  }, [allBookHighlights]);
+
+  const renderTabBar = () => {
+    const tabIndex = activeTab === 'notes' ? 0 : activeTab === 'highlights' ? 1 : 2;
+    return (
+    <div className={`relative grid grid-cols-3 rounded-xl p-1 mx-6 overflow-hidden ${pressedClass}`}>
       <div
-        className={`pointer-events-none absolute top-1 bottom-1 left-1 w-[calc(50%-0.25rem)] rounded-lg transition-transform duration-300 ${
-          activeTab === 'quiz' ? 'translate-x-full' : 'translate-x-0'
-        } ${isDarkMode ? 'bg-[#2d3748] shadow-[6px_6px_12px_#232b39]' : 'bg-[var(--neu-bg)] shadow-[6px_6px_12px_var(--neu-shadow-dark)]'}`}
+        className={`pointer-events-none absolute top-1 bottom-1 left-1 w-[calc((100%-0.5rem)/3)] rounded-lg transition-transform duration-300 ${isDarkMode ? 'bg-[#2d3748] shadow-[6px_6px_12px_#232b39]' : 'bg-[var(--neu-bg)] shadow-[6px_6px_12px_var(--neu-shadow-dark)]'}`}
+        style={{ transform: `translateX(${tabIndex * 100}%)` }}
       />
       <button
-        onClick={() => setActiveTab('notes')}
-        className={`relative z-10 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-bold transition-colors ${
+        onClick={() => switchHubTab('notes')}
+        className={`relative z-10 flex items-center justify-center gap-1 py-2.5 rounded-lg text-sm font-bold transition-colors ${
           activeTab === 'notes' ? (isDarkMode ? 'text-white' : 'text-rose-400') : 'text-slate-500'
         }`}
       >
-        <NotebookPen size={16} /> 读书笔记
+        <NotebookPen size={14} /> 笔记
       </button>
       <button
-        onClick={() => setActiveTab('quiz')}
-        className={`relative z-10 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-sm font-bold transition-colors ${
+        onClick={() => switchHubTab('highlights')}
+        className={`relative z-10 flex items-center justify-center gap-1 py-2.5 rounded-lg text-sm font-bold transition-colors ${
+          activeTab === 'highlights' ? (isDarkMode ? 'text-white' : 'text-rose-400') : 'text-slate-500'
+        }`}
+      >
+        <Highlighter size={14} /> 摘录
+      </button>
+      <button
+        onClick={() => switchHubTab('quiz')}
+        className={`relative z-10 flex items-center justify-center gap-1 py-2.5 rounded-lg text-sm font-bold transition-colors ${
           activeTab === 'quiz' ? (isDarkMode ? 'text-white' : 'text-rose-400') : 'text-slate-500'
         }`}
       >
-        <CircleCheckBig size={16} /> 内容问答
+        <CircleCheckBig size={14} /> 问答
       </button>
     </div>
-  );
+    );
+  };
 
   // ══════════════════════════════════════════════
   //  RENDER: Notes — Notebook List
@@ -3832,37 +4118,182 @@ const StudyHub: React.FC<StudyHubProps> = ({
       {renderTabBar()}
 
       {/* Notes views — each view manages its own fixed header + scroll area */}
-      {activeTab === 'notes' && (
-        <div key={notesView} className={`flex-1 flex flex-col overflow-hidden ${notesViewAnimClass}`}>
-          {activeNotebook?.paperCssApplied && <style>{activeNotebook.paperCssApplied}</style>}
-          {notesView === 'list' && renderNotebookList()}
-          {notesView === 'detail' && renderNotebookDetail()}
-          {notesView === 'editor' && renderNoteEditor()}
+      {renderedTab === 'notes' && (
+        <div className={`flex-1 flex flex-col overflow-hidden ${hubTabAnimClass}`}>
+          <div key={notesView} className={`flex-1 flex flex-col overflow-hidden ${notesViewAnimClass}`}>
+            {activeNotebook?.paperCssApplied && <style>{activeNotebook.paperCssApplied}</style>}
+            {notesView === 'list' && renderNotebookList()}
+            {notesView === 'detail' && renderNotebookDetail()}
+            {notesView === 'editor' && renderNoteEditor()}
+          </div>
         </div>
       )}
 
       {/* Quiz views — each view manages its own layout */}
-      {activeTab === 'quiz' && (
-        <div key={quizView} className={`flex-1 flex flex-col overflow-hidden ${quizViewAnimClass}`}>
-          {quizView === 'history' && renderQuizHistory()}
-          {quizView === 'config' && (
-            <div className="flex-1 overflow-y-auto px-6 no-scrollbar" />
-          )}
-          {quizView === 'play' && (
-            <div className="flex-1 overflow-y-auto px-6 no-scrollbar">{renderQuizPlay()}</div>
-          )}
-          {quizView === 'result' && (
-            <>
-              <div className="px-6 py-4 flex-shrink-0">
-                <button onClick={() => { switchQuizView('history', () => { setActiveQuizSession(null); }); }}
-                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all active:scale-95 ${btnClass}`}
-                >
-                  <ArrowLeft size={20} />
-                </button>
+      {renderedTab === 'quiz' && (
+        <div className={`flex-1 flex flex-col overflow-hidden ${hubTabAnimClass}`}>
+          <div key={quizView} className={`flex-1 flex flex-col overflow-hidden ${quizViewAnimClass}`}>
+            {quizView === 'history' && renderQuizHistory()}
+            {quizView === 'config' && (
+              <div className="flex-1 overflow-y-auto px-6 no-scrollbar" />
+            )}
+            {quizView === 'play' && (
+              <div className="flex-1 overflow-y-auto px-6 no-scrollbar">{renderQuizPlay()}</div>
+            )}
+            {quizView === 'result' && (
+              <>
+                <div className="px-6 py-4 flex-shrink-0">
+                  <button onClick={() => { switchQuizView('history', () => { setActiveQuizSession(null); }); }}
+                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-all active:scale-95 ${btnClass}`}
+                  >
+                    <ArrowLeft size={20} />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto px-6 no-scrollbar">{renderQuizResult()}</div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Highlights / excerpts view */}
+      {renderedTab === 'highlights' && (
+        <div className={`flex-1 flex flex-col overflow-hidden ${hubTabAnimClass}`}>
+          {/* Fixed header — matching notes header (h-10 = 40px row height) */}
+          <div className="flex items-center justify-between px-6 pt-4 pb-2">
+            <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider">{'所有摘录'}</h2>
+            <div className="flex items-center gap-1.5 h-10">
+              <button
+                type="button"
+                onClick={() => setHubHighlightColorFilter(null)}
+                className={`h-6 px-2 rounded-full text-[10px] font-bold transition-all ${
+                  !hubHighlightColorFilter
+                    ? 'text-rose-400 bg-rose-400/10'
+                    : isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                }`}
+              >
+                {'全部'}
+              </button>
+              {PRESET_HIGHLIGHT_COLORS.filter(c => usedHighlightColors.has(c)).map(color => (
+                <button
+                  key={color}
+                  type="button"
+                  onClick={() => setHubHighlightColorFilter(hubHighlightColorFilter === color ? null : color)}
+                  className={`w-5 h-5 rounded-full border-2 transition-all ${
+                    hubHighlightColorFilter === color ? 'border-rose-400 scale-110' : 'border-transparent'
+                  }`}
+                  style={{ backgroundColor: color }}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Fixed book filter dropdown */}
+          {allBookHighlights.length > 1 && (() => {
+            const toggleBook = (bookId: string) => {
+              setHubHighlightBookFilter(prev =>
+                prev.includes(bookId) ? prev.filter(id => id !== bookId) : [...prev, bookId]
+              );
+            };
+            return (
+              <div className="px-6 pt-1 pb-3">
+                <HighlightBookMultiSelect
+                  entries={allBookHighlights}
+                  selected={hubHighlightBookFilter}
+                  onToggle={toggleBook}
+                  onClear={() => setHubHighlightBookFilter([])}
+                  inputClass={inputClass}
+                  cardClass={cardClass}
+                  isDarkMode={isDarkMode}
+                />
               </div>
-              <div className="flex-1 overflow-y-auto px-6 no-scrollbar">{renderQuizResult()}</div>
-            </>
-          )}
+            );
+          })()}
+
+          {/* Scrollable highlight list */}
+          <div className="flex-1 overflow-y-auto px-6 pb-24 no-scrollbar">
+            {highlightsLoading && allBookHighlights.length === 0 && (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 size={20} className="animate-spin text-slate-400" />
+              </div>
+            )}
+            {!highlightsLoading && allBookHighlights.length === 0 && (
+              <div className="text-center text-slate-400 text-sm py-8">
+                {'还没有高亮摘录'}
+              </div>
+            )}
+            {allBookHighlights.length > 0 && filteredHighlightGroups.length === 0 && (
+              <div className="text-center text-slate-400 text-sm py-8">
+                {'当前筛选条件下暂无摘录'}
+              </div>
+            )}
+            {filteredHighlightGroups.map((entry) => {
+                return (
+                  <div key={entry.bookId} className="mb-6">
+                    <h3 className={`text-xs font-bold uppercase tracking-wider mb-2 ${
+                      isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                    }`}>
+                      {entry.bookTitle} ({entry.items.length})
+                    </h3>
+                    <div className="space-y-3">
+                    {entry.items.map(item => {
+                      const isExpanded = expandedHighlightIds.has(item.id);
+                      const toggleExpand = () => {
+                        setExpandedHighlightIds(prev => {
+                          const next = new Set(prev);
+                          if (next.has(item.id)) next.delete(item.id); else next.add(item.id);
+                          return next;
+                        });
+                      };
+                      return (
+                      <div
+                        key={item.id}
+                        className={`rounded-xl p-3 cursor-pointer transition-all ${cardClass}`}
+                        onClick={toggleExpand}
+                      >
+                        <div className="flex items-start gap-2">
+                          <div
+                            className="w-1 self-stretch rounded-full flex-shrink-0"
+                            style={{ backgroundColor: item.range.color }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <ExpandableHighlightText text={item.text} isExpanded={isExpanded} isDarkMode={isDarkMode} />
+                            <p className="text-[10px] text-slate-400 mt-1">
+                              {item.chapterTitle}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-1.5 mt-2" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyHighlight(item.text)}
+                            className={`w-7 h-7 rounded-lg flex items-center justify-center ${btnClass}`}
+                          >
+                            <Copy size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteStudyHubHighlight(entry.bookId, item)}
+                            className={`w-7 h-7 rounded-lg flex items-center justify-center ${enabledDangerIconButtonClass}`}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onJumpToBookHighlight?.(entry.bookId, item.chapterIndex, item.range.start)}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-white bg-rose-400 shadow-lg hover:bg-rose-500 active:scale-95 transition-all"
+                          >
+                            <ExternalLink size={13} />
+                          </button>
+                        </div>
+                      </div>
+                      );
+                    })}
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
         </div>
       )}
 
