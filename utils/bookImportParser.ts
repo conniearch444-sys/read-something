@@ -4,7 +4,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import { Chapter, ReaderContentBlock } from '../types';
 import { deleteImageByRef, saveImageBlob } from './imageStorage';
 
-type SupportedImportFormat = 'txt' | 'word' | 'epub' | 'pdf';
+type SupportedImportFormat = 'txt' | 'word' | 'epub' | 'pdf' | 'mobi';
 
 export interface ParsedBookImportResult {
   format: SupportedImportFormat;
@@ -19,8 +19,9 @@ export interface ParsedBookImportResult {
 const WORD_SUFFIXES = new Set(['docx', 'docm', 'dotx', 'dotm']);
 const EPUB_SUFFIXES = new Set(['epub']);
 const PDF_SUFFIXES = new Set(['pdf']);
+const MOBI_SUFFIXES = new Set(['mobi']);
 const TXT_SUFFIXES = new Set(['txt']);
-const SUPPORTED_SUFFIXES = [...TXT_SUFFIXES, ...WORD_SUFFIXES, ...PDF_SUFFIXES, ...EPUB_SUFFIXES];
+const SUPPORTED_SUFFIXES = [...TXT_SUFFIXES, ...WORD_SUFFIXES, ...PDF_SUFFIXES, ...EPUB_SUFFIXES, ...MOBI_SUFFIXES];
 
 export const BOOK_IMPORT_ACCEPT = SUPPORTED_SUFFIXES.map((suffix) => `.${suffix}`).join(',');
 export const SUPPORTED_BOOK_IMPORT_SUFFIXES = [...SUPPORTED_SUFFIXES];
@@ -86,6 +87,41 @@ interface EpubTokenizedDocument {
   title: string;
   tokens: HtmlToken[];
   anchorIndexMap: Map<string, number>;
+}
+
+interface MobiSpineItem {
+  id: string;
+  text: string;
+}
+
+interface MobiTocItem {
+  label: string;
+  href: string;
+  children?: MobiTocItem[];
+}
+
+interface MobiResolvedHref {
+  id: string;
+  selector: string;
+}
+
+interface MobiMetadata {
+  title?: string;
+  author?: string[] | string;
+}
+
+interface MobiProcessedChapter {
+  html: string;
+}
+
+interface MobiParserInstance {
+  getSpine(): MobiSpineItem[];
+  getToc(): MobiTocItem[];
+  loadChapter(id: string): MobiProcessedChapter | undefined;
+  resolveHref(href: string): MobiResolvedHref | undefined;
+  getCoverImage(): string;
+  getMetadata(): MobiMetadata;
+  destroy(): void;
 }
 
 interface HtmlTokenText {
@@ -169,6 +205,12 @@ const normalizeTextBlock = (raw: string) => {
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/\n{3,}/g, '\n\n');
   return normalized.trim();
+};
+
+const extractTextFromHtml = (html: string) => {
+  if (!html) return '';
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  return normalizeTextBlock(doc.body?.textContent || doc.documentElement?.textContent || '');
 };
 
 const decodeTextBuffer = (buffer: ArrayBuffer, encoding: string) => {
@@ -944,6 +986,427 @@ const parseEpubFile = async (file: File, context: ImportParseContext) => {
   };
 };
 
+const flattenMobiTocItems = (items: MobiTocItem[]) => {
+  const flattened: MobiTocItem[] = [];
+  const queue = [...items];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) continue;
+    flattened.push(current);
+    if (Array.isArray(current.children) && current.children.length > 0) {
+      queue.push(...current.children);
+    }
+  }
+  return flattened;
+};
+
+const resolveBlobOrDataImageToken = async (token: HtmlTokenImage, context: ImportParseContext) => {
+  const src = token.src.trim();
+  if (!src) return null;
+  if (/^https?:/i.test(src)) return null;
+  const response = await fetch(src).catch(() => null);
+  if (!response || !response.ok) return null;
+  const blob = await response.blob();
+  if (!blob || blob.size <= 0) return null;
+  return collectImageRef(blob, context);
+};
+
+const MOBI_MAX_UINT32 = 0xffffffff;
+
+const readMobiAscii = (bytes: Uint8Array, offset: number, length: number) => {
+  if (offset < 0 || length <= 0 || offset + length > bytes.length) return '';
+  let result = '';
+  for (let index = offset; index < offset + length; index += 1) {
+    result += String.fromCharCode(bytes[index]);
+  }
+  return result;
+};
+
+const detectImageMimeTypeFromBytes = (bytes: Uint8Array) => {
+  if (bytes.length < 4) return '';
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  if (
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47
+  ) {
+    return 'image/png';
+  }
+  if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) return 'image/gif';
+  if (bytes[0] === 0x42 && bytes[1] === 0x4d) return 'image/bmp';
+  if (
+    bytes.length >= 12 &&
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  ) {
+    return 'image/webp';
+  }
+  return '';
+};
+
+const extractMobiCoverBlobFromRawFile = async (file: File): Promise<Blob | null> => {
+  const arrayBuffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+  const view = new DataView(arrayBuffer);
+  if (bytes.length < 86) return null;
+
+  const numRecords = view.getUint16(76, false);
+  if (!numRecords) return null;
+
+  const recordOffsets: number[] = [];
+  for (let index = 0; index < numRecords; index += 1) {
+    const offset = 78 + index * 8;
+    if (offset + 4 > bytes.length) break;
+    recordOffsets.push(view.getUint32(offset, false));
+  }
+  if (recordOffsets.length < 2) return null;
+
+  const firstRecordStart = recordOffsets[0];
+  const firstRecordEnd = recordOffsets[1];
+  if (firstRecordStart < 0 || firstRecordEnd <= firstRecordStart || firstRecordEnd > bytes.length) return null;
+
+  const firstRecord = bytes.subarray(firstRecordStart, firstRecordEnd);
+  if (readMobiAscii(firstRecord, 16, 4) !== 'MOBI') return null;
+
+  const readFirstRecordUint32 = (offset: number) => {
+    if (offset + 4 > firstRecord.length) return MOBI_MAX_UINT32;
+    return (
+      (firstRecord[offset] << 24) |
+      (firstRecord[offset + 1] << 16) |
+      (firstRecord[offset + 2] << 8) |
+      firstRecord[offset + 3]
+    ) >>> 0;
+  };
+
+  const resourceStart = readFirstRecordUint32(108);
+  if (resourceStart === MOBI_MAX_UINT32 || resourceStart >= recordOffsets.length) return null;
+
+  const mobiHeaderLength = readFirstRecordUint32(20);
+  const exthFlag = readFirstRecordUint32(128);
+  let coverOffset = MOBI_MAX_UINT32;
+  let thumbnailOffset = MOBI_MAX_UINT32;
+
+  if ((exthFlag & 64) !== 0) {
+    const exthStart = 16 + mobiHeaderLength;
+    if (exthStart + 12 <= firstRecord.length && readMobiAscii(firstRecord, exthStart, 4) === 'EXTH') {
+      const exthLength =
+        ((firstRecord[exthStart + 4] << 24) |
+          (firstRecord[exthStart + 5] << 16) |
+          (firstRecord[exthStart + 6] << 8) |
+          firstRecord[exthStart + 7]) >>> 0;
+      const exthCount =
+        ((firstRecord[exthStart + 8] << 24) |
+          (firstRecord[exthStart + 9] << 16) |
+          (firstRecord[exthStart + 10] << 8) |
+          firstRecord[exthStart + 11]) >>> 0;
+
+      let cursor = exthStart + 12;
+      const exthEnd = Math.min(firstRecord.length, exthStart + exthLength);
+      for (let index = 0; index < exthCount && cursor + 8 <= exthEnd; index += 1) {
+        const recordType =
+          ((firstRecord[cursor] << 24) |
+            (firstRecord[cursor + 1] << 16) |
+            (firstRecord[cursor + 2] << 8) |
+            firstRecord[cursor + 3]) >>> 0;
+        const recordLength =
+          ((firstRecord[cursor + 4] << 24) |
+            (firstRecord[cursor + 5] << 16) |
+            (firstRecord[cursor + 6] << 8) |
+            firstRecord[cursor + 7]) >>> 0;
+        if (recordLength < 8) break;
+
+        if ((recordType === 201 || recordType === 202) && cursor + 12 <= exthEnd) {
+          const value =
+            ((firstRecord[cursor + 8] << 24) |
+              (firstRecord[cursor + 9] << 16) |
+              (firstRecord[cursor + 10] << 8) |
+              firstRecord[cursor + 11]) >>> 0;
+          if (recordType === 201) coverOffset = value;
+          if (recordType === 202) thumbnailOffset = value;
+        }
+
+        cursor += recordLength;
+      }
+    }
+  }
+
+  const candidateResourceOffsets: number[] = [];
+  const pushCandidateOffset = (offset: number) => {
+    if (!Number.isFinite(offset) || offset < 0 || offset === MOBI_MAX_UINT32) return;
+    if (candidateResourceOffsets.includes(offset)) return;
+    candidateResourceOffsets.push(offset);
+  };
+  pushCandidateOffset(coverOffset);
+  pushCandidateOffset(thumbnailOffset);
+  for (let index = 0; index < 24; index += 1) {
+    pushCandidateOffset(index);
+  }
+
+  const getRecordSlice = (recordIndex: number) => {
+    if (recordIndex < 0 || recordIndex >= recordOffsets.length) return null;
+    const start = recordOffsets[recordIndex];
+    const end = recordIndex + 1 < recordOffsets.length ? recordOffsets[recordIndex + 1] : bytes.length;
+    if (start < 0 || end <= start || end > bytes.length) return null;
+    return bytes.subarray(start, end);
+  };
+
+  for (const resourceOffset of candidateResourceOffsets) {
+    const recordIndex = resourceStart + resourceOffset;
+    const recordData = getRecordSlice(recordIndex);
+    if (!recordData || recordData.length < 4) continue;
+
+    const mimeType = detectImageMimeTypeFromBytes(recordData);
+    if (!mimeType) continue;
+    return new Blob([recordData], { type: mimeType });
+  }
+
+  return null;
+};
+
+const MOBI_DEFAULT_CHAPTER_TITLE_REGEX = /^chapter\s+\d+$/i;
+const MOBI_TOC_HEADER_REGEX = /^(table\s+of\s+contents|contents|目录|目\s*录)$/i;
+const MOBI_TOC_CONTENT_REGEX = /table\s+of\s+contents|目\s*录|目录/i;
+
+const stripMobiTrailingPageNumber = (line: string) => line.replace(/\s*[·•\-–—]?\s*\d{1,5}\s*$/, '').trim();
+
+const isMobiPlaceholderTitle = (title: string) => {
+  const normalized = compactWhitespace(title || '');
+  return !normalized || MOBI_DEFAULT_CHAPTER_TITLE_REGEX.test(normalized) || MOBI_TOC_HEADER_REGEX.test(normalized);
+};
+
+const inferMobiChapterTitleFromContent = (content: string) => {
+  const lines = normalizeTextBlock(content)
+    .split('\n')
+    .map((line) => stripMobiTrailingPageNumber(compactWhitespace(line)))
+    .filter(Boolean);
+
+  for (const line of lines) {
+    const normalized = line.replace(/^chapter\s+\d+\s*[:：.\-]?\s*/i, '').trim();
+    if (!normalized) continue;
+    if (/^\d+$/.test(normalized)) continue;
+    if (MOBI_TOC_CONTENT_REGEX.test(normalized)) continue;
+    if (normalized.length > 36) continue;
+    return normalized;
+  }
+
+  return '';
+};
+
+const extractMobiTocTitlesFromContent = (content: string) => {
+  const normalizedContent = normalizeTextBlock(content);
+  if (!normalizedContent) return [] as string[];
+
+  const lines = normalizedContent
+    .split('\n')
+    .map((line) => compactWhitespace(line))
+    .filter(Boolean);
+
+  const titles: string[] = [];
+  let sawTocHeader = false;
+  lines.forEach((rawLine) => {
+    const noPageLine = stripMobiTrailingPageNumber(rawLine);
+    if (!noPageLine) return;
+
+    if (MOBI_TOC_CONTENT_REGEX.test(noPageLine)) {
+      sawTocHeader = true;
+      return;
+    }
+    if (!sawTocHeader) return;
+
+    const normalized = noPageLine.replace(/^chapter\s+\d+\s*[:：.\-]?\s*/i, '').trim();
+    if (!normalized) return;
+    if (/^\d+$/.test(normalized)) return;
+    if (/^[-=._\s]+$/.test(normalized)) return;
+    if (normalized.length > 42) return;
+    if (MOBI_TOC_CONTENT_REGEX.test(normalized)) return;
+    if (titles.includes(normalized)) return;
+    titles.push(normalized);
+  });
+
+  return titles;
+};
+
+const looksLikeMobiTocChapter = (chapter: Chapter, tocTitles: string[]) => {
+  if (tocTitles.length < 5) return false;
+  const lines = normalizeTextBlock(chapter.content)
+    .split('\n')
+    .map((line) => compactWhitespace(line))
+    .filter(Boolean);
+  if (lines.length < 8) return false;
+  const shortLineCount = lines.filter((line) => stripMobiTrailingPageNumber(line).length <= 24).length;
+  return shortLineCount / lines.length >= 0.6;
+};
+
+const findFirstImageRefInChapters = (chapters: Chapter[]) => {
+  for (const chapter of chapters) {
+    const blocks = chapter.blocks || [];
+    for (const block of blocks) {
+      if (block.type !== 'image') continue;
+      if (block.imageRef) return block.imageRef;
+    }
+  }
+  return '';
+};
+
+const postProcessMobiChapters = (chapters: Chapter[]) => {
+  const normalizedChapters = chapters.map((chapter) => ({ ...chapter }));
+
+  normalizedChapters.forEach((chapter) => {
+    if (!isMobiPlaceholderTitle(chapter.title)) return;
+    const inferredTitle = inferMobiChapterTitleFromContent(chapter.content || '');
+    if (inferredTitle) {
+      chapter.title = inferredTitle;
+    }
+  });
+
+  const tocIndex = normalizedChapters.findIndex((chapter) => {
+    if (!MOBI_TOC_CONTENT_REGEX.test(chapter.content || '')) return false;
+    return extractMobiTocTitlesFromContent(chapter.content || '').length >= 3;
+  });
+
+  if (tocIndex < 0) return normalizedChapters;
+
+  const tocChapter = normalizedChapters[tocIndex];
+  const tocTitles = extractMobiTocTitlesFromContent(tocChapter.content || '');
+  if (tocTitles.length > 0) {
+    const targetIndexes = normalizedChapters
+      .map((chapter, index) => ({ chapter, index }))
+      .filter(({ index }) => index !== tocIndex)
+      .filter(({ chapter }) => isMobiPlaceholderTitle(chapter.title))
+      .map(({ index }) => index);
+
+    const assignCount = Math.min(targetIndexes.length, tocTitles.length);
+    for (let index = 0; index < assignCount; index += 1) {
+      normalizedChapters[targetIndexes[index]].title = tocTitles[index];
+    }
+  }
+
+  if (isMobiPlaceholderTitle(tocChapter.title)) {
+    tocChapter.title = '目录';
+  }
+
+  if (looksLikeMobiTocChapter(tocChapter, tocTitles)) {
+    normalizedChapters.splice(tocIndex, 1);
+  }
+
+  return normalizedChapters;
+};
+
+const parseMobiFile = async (file: File, context: ImportParseContext) => {
+  const mobiModule = await import('@lingo-reader/mobi-parser');
+  const mobi = (await mobiModule.initMobiFile(file)) as MobiParserInstance;
+
+  try {
+    const metadata = mobi.getMetadata();
+    const metadataTitle = compactWhitespace(typeof metadata?.title === 'string' ? metadata.title : '');
+    const metadataAuthor = Array.isArray(metadata?.author)
+      ? metadata.author.map((authorName) => compactWhitespace(authorName || '')).filter(Boolean).join(' / ')
+      : compactWhitespace(typeof metadata?.author === 'string' ? metadata.author : '');
+
+    let coverUrl = '';
+    const coverImageSource = mobi.getCoverImage();
+    if (coverImageSource && !/^https?:/i.test(coverImageSource)) {
+      const coverResponse = await fetch(coverImageSource).catch(() => null);
+      if (coverResponse?.ok) {
+        const coverBlob = await coverResponse.blob();
+        if (coverBlob && coverBlob.size > 0) {
+          coverUrl = await collectImageRef(coverBlob, context);
+        }
+      }
+    }
+    if (!coverUrl) {
+      const rawCoverBlob = await extractMobiCoverBlobFromRawFile(file).catch(() => null);
+      if (rawCoverBlob && rawCoverBlob.size > 0) {
+        coverUrl = await collectImageRef(rawCoverBlob, context);
+      }
+    }
+
+    const titleByChapterId = new Map<string, string>();
+    const rawTocItems = mobi.getToc();
+    const tocItems = Array.isArray(rawTocItems) ? rawTocItems : [];
+    flattenMobiTocItems(tocItems).forEach((item) => {
+      const label = compactWhitespace(item.label || '');
+      if (!label || !item.href) return;
+      const resolved = mobi.resolveHref(item.href);
+      if (!resolved?.id || titleByChapterId.has(resolved.id)) return;
+      titleByChapterId.set(resolved.id, label);
+    });
+
+    const rawSpineItems = mobi.getSpine();
+    const spineItems = Array.isArray(rawSpineItems) ? rawSpineItems : [];
+    const chapters: Chapter[] = [];
+
+    for (let index = 0; index < spineItems.length; index += 1) {
+      const spineItem = spineItems[index];
+      if (!spineItem?.id) continue;
+
+      const loadedChapter = mobi.loadChapter(spineItem.id);
+      const chapterHtml = loadedChapter?.html || spineItem.text || '';
+      if (!chapterHtml.trim()) continue;
+
+      const chapterDoc = new DOMParser().parseFromString(chapterHtml, 'text/html');
+      const chapterTokens: HtmlToken[] = [];
+      const nodes = chapterDoc.body ? Array.from(chapterDoc.body.childNodes) : Array.from(chapterDoc.childNodes);
+      nodes.forEach((node) => collectHtmlTokens(node, chapterTokens));
+
+      const chapterBlocks = await materializeHtmlTokens(chapterTokens, (token) => resolveBlobOrDataImageToken(token, context));
+      const fallbackChapterText = normalizeTextBlock(
+        chapterDoc.body?.textContent || chapterDoc.documentElement?.textContent || ''
+      );
+      const chapterTitle =
+        titleByChapterId.get(spineItem.id) ||
+        findFirstHeadingText(chapterDoc) ||
+        compactWhitespace(chapterDoc.querySelector('title')?.textContent || '') ||
+        `Chapter ${chapters.length + 1}`;
+
+      const chapter =
+        chapterBlocks.length > 0
+          ? buildChapterFromBlocks(chapterTitle, chapterBlocks)
+          : buildChapterFromBlocks(
+              chapterTitle,
+              fallbackChapterText ? [{ type: 'text', text: fallbackChapterText }] : []
+            );
+      if (!chapter.content && (!chapter.blocks || chapter.blocks.length === 0)) continue;
+      chapters.push(chapter);
+    }
+
+    const fallbackFullText = normalizeTextBlock(
+      spineItems
+        .map((spineItem) => extractTextFromHtml(spineItem.text || ''))
+        .filter(Boolean)
+        .join('\n\n')
+    );
+    const normalizedChapters = postProcessMobiChapters(chapters);
+    if (!coverUrl) {
+      const fallbackCoverRef = findFirstImageRefInChapters(normalizedChapters);
+      if (fallbackCoverRef) {
+        coverUrl = fallbackCoverRef;
+      }
+    }
+
+    const chapterText = normalizeTextBlock(normalizedChapters.map((chapter) => chapter.content).filter(Boolean).join('\n\n'));
+    const fullText = chapterText || fallbackFullText;
+
+    return {
+      format: 'mobi' as const,
+      title: metadataTitle || trimFileExt(file.name),
+      author: metadataAuthor || '佚名',
+      coverUrl,
+      fullText,
+      chapters: normalizedChapters.length > 0 ? normalizedChapters : buildFallbackSingleChapter('全文', fullText),
+    };
+  } finally {
+    mobi.destroy();
+  }
+};
+
 const renderPdfPageToBlob = async (page: any, maxWidth: number) => {
   const viewport = page.getViewport({ scale: 1 });
   const safeMaxWidth = Math.max(80, Math.round(maxWidth));
@@ -1179,6 +1642,7 @@ const detectFormat = (file: File): SupportedImportFormat => {
   if (WORD_SUFFIXES.has(suffix)) return 'word';
   if (EPUB_SUFFIXES.has(suffix)) return 'epub';
   if (PDF_SUFFIXES.has(suffix)) return 'pdf';
+  if (MOBI_SUFFIXES.has(suffix)) return 'mobi';
   throw new Error(`Unsupported file format: .${suffix || 'unknown'}`);
 };
 
@@ -1201,7 +1665,9 @@ export const parseImportedBookFile = async (file: File): Promise<ParsedBookImpor
         ? await parseWordFile(file, context)
         : format === 'epub'
         ? await parseEpubFile(file, context)
-        : await parsePdfFile(file, context);
+        : format === 'pdf'
+        ? await parsePdfFile(file, context)
+        : await parseMobiFile(file, context);
 
     const normalizedFullText = normalizeTextBlock(parsed.fullText || '');
     const normalizedChapters =

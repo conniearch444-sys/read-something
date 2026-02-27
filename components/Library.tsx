@@ -91,6 +91,9 @@ const inferSuffixFromContentType = (contentType: string) => {
   const normalizedType = contentType.toLowerCase();
   if (normalizedType.includes('application/epub+zip')) return 'epub';
   if (normalizedType.includes('application/pdf')) return 'pdf';
+  if (normalizedType.includes('application/x-mobipocket-ebook')) return 'mobi';
+  if (normalizedType.includes('application/vnd.amazon.ebook')) return 'mobi';
+  if (normalizedType.includes('mobipocket')) return 'mobi';
   if (normalizedType.includes('application/vnd.openxmlformats-officedocument.wordprocessingml.document')) return 'docx';
   if (normalizedType.includes('application/vnd.ms-word.document.macroenabled.12')) return 'docm';
   if (normalizedType.includes('application/vnd.openxmlformats-officedocument.wordprocessingml.template')) return 'dotx';
@@ -830,7 +833,7 @@ const Library: React.FC<LibraryProps> = ({
     isEdit: boolean
   ) => {
     const structuredMode =
-      parsed.format === 'epub' || parsed.format === 'pdf' || hasStructuredChapterBlocks(parsed.chapters);
+      parsed.format === 'epub' || parsed.format === 'pdf' || parsed.format === 'mobi' || hasStructuredChapterBlocks(parsed.chapters);
 
     if (isEdit) {
       setIsEditStructuredChapterMode(structuredMode);
@@ -895,7 +898,7 @@ const Library: React.FC<LibraryProps> = ({
         suffix = inferSuffixFromContentType(contentType);
       }
       if (!suffix) {
-        throw new Error('无法识别文件格式。请使用带有 .txt / .docx / .epub / .pdf 后缀的链接，或提供正确的文件 Content-Type。');
+        throw new Error('无法识别文件格式。请使用带有 .txt / .docx / .epub / .pdf / .mobi 后缀的链接，或提供正确的文件 Content-Type。');
       }
 
       const fileName = ensureFileNameWithSuffix(sourceName, suffix);
@@ -1117,8 +1120,17 @@ const Library: React.FC<LibraryProps> = ({
       <div className="overflow-y-auto no-scrollbar flex-1 -mx-2 px-2 space-y-5 pb-4">
         <div className={`p-4 rounded-xl space-y-3 ${isDarkMode ? 'bg-black/20' : 'bg-slate-100/50'}`}>
           <div className="flex items-center justify-between">
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-              <FileUp size={14} /> 导入文本 (TXT / WORD / PDF / EPUB)
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-start gap-2">
+              <FileUp size={14} className="mt-[1px] shrink-0" />
+              <span className="leading-tight">
+                导入文本
+                <span
+                  className="block font-bold opacity-70 tracking-normal mt-0.5"
+                  style={{ fontSize: 'calc(10px * var(--app-font-scale, 1))' }}
+                >
+                  (TXT / WORD / PDF / EPUB / MOBI)
+                </span>
+              </span>
             </label>
             <span className="text-[10px] text-slate-400">{book.fullText ? '已加载内容' : '未选择'}</span>
           </div>
@@ -1737,14 +1749,19 @@ const Library: React.FC<LibraryProps> = ({
         {viewMode === 'grid' ? (
            <div key="grid" className="grid grid-cols-2 gap-6 animate-fade-in">
                {/* Add New Book Button (Import) - Only in Grid or List? Let's keep it in both but style differently if list */}
-               <div 
+                <div 
                   onClick={openImportModal}
                   className={`aspect-[3/4] rounded-2xl flex flex-col items-center justify-center hover:text-rose-400 transition-all cursor-pointer border-2 border-transparent hover:border-rose-100/20 active:scale-[0.98] ${pressedClass} ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}
-               >
-                  <Plus size={32} />
-                  <span className="text-sm font-medium mt-2">导入书籍</span>
-                  <span className="text-xs mt-1 opacity-60">TXT / WORD / PDF / EPUB</span>
-               </div>
+                >
+                   <Plus size={32} />
+                   <span className="text-sm font-medium mt-2">导入书籍</span>
+                  <span
+                    className="leading-none mt-1 opacity-60 whitespace-nowrap"
+                    style={{ fontSize: 'calc(9px * var(--app-font-scale, 1))' }}
+                  >
+                    TXT / WORD / PDF / EPUB / MOBI
+                  </span>
+                </div>
 
                {/* Grid Books */}
                {sortedBooks.map(book => (
@@ -1802,13 +1819,13 @@ const Library: React.FC<LibraryProps> = ({
         ) : (
            <div key="list" className="flex flex-col gap-3 animate-fade-in">
                {/* Add New Book (List Mode) */}
-               <div 
-                  onClick={openImportModal}
-                  className={`p-4 rounded-2xl flex items-center justify-center gap-2 hover:text-rose-400 transition-all cursor-pointer border-2 border-transparent hover:border-rose-100/20 active:scale-[0.98] ${pressedClass} ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}
-               >
-                  <Plus size={18} />
-                  <span className="text-sm"><span className="font-medium">导入书籍</span> <span className="opacity-60 font-normal">TXT / WORD / PDF / EPUB</span></span>
-               </div>
+                <div 
+                   onClick={openImportModal}
+                   className={`p-4 rounded-2xl flex items-center justify-center gap-2 hover:text-rose-400 transition-all cursor-pointer border-2 border-transparent hover:border-rose-100/20 active:scale-[0.98] ${pressedClass} ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}
+                >
+                   <Plus size={18} />
+                  <span className="text-sm"><span className="font-medium">导入书籍</span> <span className="opacity-60 font-normal">TXT / WORD / PDF / EPUB / MOBI</span></span>
+                </div>
                
                {/* List Books */}
                {sortedBooks.map(book => (

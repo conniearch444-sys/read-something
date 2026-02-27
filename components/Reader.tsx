@@ -5107,14 +5107,14 @@ const Reader: React.FC<ReaderProps> = ({
                     : cachedDimensions?.height;
                 return (
                   <figure key={item.key} className="mb-6 not-prose">
-                    <div className={`w-full rounded-xl p-1.5 overflow-hidden ${isDarkMode ? 'bg-slate-900/30' : 'bg-white/60'}`}>
+                    <div className={`mx-auto w-fit max-w-full rounded-xl p-1.5 overflow-hidden ${isDarkMode ? 'bg-slate-900/30' : 'bg-white/60'}`}>
                       <ResolvedImage
                         src={item.imageRef}
                         alt={item.alt || item.title || 'Embedded image'}
                         width={resolvedWidth}
                         height={resolvedHeight}
                         onResolved={() => markChapterImageSettled(item.key)}
-                        className="w-full h-auto max-h-[60vh] object-contain rounded-lg mx-auto"
+                        className="block w-auto max-w-full h-auto max-h-[60vh] object-contain rounded-lg mx-auto"
                       />
                     </div>
                     {item.title && (
