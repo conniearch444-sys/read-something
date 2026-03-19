@@ -543,11 +543,14 @@ const Settings: React.FC<SettingsProps> = ({
   if (currentView === 'CHARACTER') {
     return (
       <>
-        <CharacterSettings 
+        <CharacterSettings
           characters={characters}
           setCharacters={setCharacters}
           personas={personas}
           wbCategories={wbCategories}
+          setWbCategories={setWbCategories}
+          worldBookEntries={worldBookEntries}
+          setWorldBookEntries={setWorldBookEntries}
           theme={theme}
           onBack={() => goBack()}
           onOpenAvatarModal={openAvatarModal}

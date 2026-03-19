@@ -12,7 +12,7 @@ import {
 
 export const BUILT_IN_TUTORIAL_BOOK_ID = '__built_in_tutorial__';
 /** Bump this number whenever tutorial content is changed so existing users get the update. */
-export const BUILT_IN_TUTORIAL_VERSION = 4.0;
+export const BUILT_IN_TUTORIAL_VERSION = 4.2;
 
 const TUTORIAL_UNREAD_KEY = '__built_in_tutorial_unread__';
 export const isTutorialUnread = (): boolean => {
@@ -36,6 +36,13 @@ const img = (imageRef: string, alt: string, w?: number, h?: number): ReaderConte
 /*  更新记录                                                            */
 /* ------------------------------------------------------------------ */
 const CH0_CONTENT = `更新记录
+
+-更新时间：2026.03.19
+
+本次更新内容：
+
+1.新增从本地导入角色卡功能
+在管理角色界面点击"新建角色"按钮，选择"本地导入"，可上传角色卡 JSON 或角色卡 PNG 文件。导入后自动还原角色名、人设描述、头像，并创建同名世界书分类，将所有绑定的世界书条目写入其中（含禁用条目）。如文件中缺少角色名，会弹出对话框补填。
 
 -更新时间：2026.02.28
 
@@ -114,6 +121,11 @@ const CH0_CONTENT = `更新记录
 
 const CH0_BLOCKS: ReaderContentBlock[] = [
   text('更新记录'),
+  text(`-更新时间：2026.03.19`),
+  text(`本次更新内容：
+
+1.新增从本地导入角色卡功能
+在管理角色界面点击"新建角色"按钮，选择"本地导入"，可上传角色卡 JSON 或角色卡 PNG 文件。导入后自动还原角色名、人设描述、头像，并创建同名世界书分类，将所有绑定的世界书条目写入其中（含禁用条目）。如文件中缺少角色名，会弹出对话框补填。`),
   text(`-更新时间：2026.02.28`),
   text(`本次更新内容：
 
