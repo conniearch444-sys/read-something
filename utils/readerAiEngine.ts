@@ -10,7 +10,7 @@ import {
     compactText,
     finishConversationGeneration,
     GenerationMode,
-    getChatBucket,
+    readConversationBucket,
     saveCrossBookMemory,
 } from './readerChatRuntime';
 
@@ -1414,7 +1414,7 @@ export const runConversationGeneration = async (
     if (outerSignal) {
       outerSignal.removeEventListener('abort', forwardAbort);
     }
-    const bucket = getChatBucket(conversationKey);
+    const bucket = readConversationBucket(conversationKey);
 if (bucket && bucket.chatSummaryCards.length > 0) {
   const latestCard = bucket.chatSummaryCards[bucket.chatSummaryCards.length - 1];
   saveCrossBookMemory(bucket.characterName || characterRealName, latestCard.content);
