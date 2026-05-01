@@ -769,19 +769,18 @@ export const onGenerationStatusChanged = (listener: (detail: GenerationStatusEve
 const CROSS_BOOK_MEMORY_KEY = 'cross_book_memories_v1';
 
 export interface CrossBookMemoryItem {
-  characterId: string;
   characterName: string;
   summary: string;   // AI 生成的摘要
   updatedAt: number;
 }
 
 // 获取某个角色的所有跨书记忆
-export const getCrossBookMemories = (characterId: string): CrossBookMemoryItem[] => {
+export const getCrossBookMemories = (characterName: string): CrossBookMemoryItem[] => {
   try {
     const raw = localStorage.getItem(CROSS_BOOK_MEMORY_KEY);
     if (!raw) return [];
     const all: CrossBookMemoryItem[] = JSON.parse(raw);
-    return all.filter(m => m.characterId === characterId);
+    return all.filter(m => m.characterName === characterName);
   } catch {
     return [];
   }
@@ -789,37 +788,35 @@ export const getCrossBookMemories = (characterId: string): CrossBookMemoryItem[]
 
 // 保存一条跨书记忆（由外部调用，如 AI 生成摘要后）
 export const saveCrossBookMemory = (
-  characterId: string,
   characterName: string,
   summary: string
 ) => {
   try {
     const raw = localStorage.getItem(CROSS_BOOK_MEMORY_KEY);
     const all: CrossBookMemoryItem[] = raw ? JSON.parse(raw) : [];
-    const existing = all.find(m => m.characterId === characterId && m.summary === summary);
+    const existing = all.find(m => m.characterName === characterName && m.summary === summary);
     if (!existing) {
       all.push({
-        characterId,
         characterName,
         summary,
         updatedAt: Date.now(),
       });
       // 每个角色最多保留 10 条记忆
-      const filtered = all.filter(m => m.characterId === characterId).slice(-10);
-      const others = all.filter(m => m.characterId !== characterId);
+      const filtered = all.filter(m => m.characterName === characterName).slice(-10);
+      const others = all.filter(m => m.characterName !== characterName);
       localStorage.setItem(CROSS_BOOK_MEMORY_KEY, JSON.stringify([...others, ...filtered]));
     }
   } catch { /* 静默处理 */ }
 };
 
 // 生成跨书记忆的文本片段，用于注入到系统提示词
-export const buildCrossBookMemoryText = (characterId: string): string => {
-  const memories = getCrossBookMemories(characterId);
+export const buildCrossBookMemoryText = (characterName: string): string => {
+  const memories = getCrossBookMemories(characterName);
   if (memories.length === 0) return '';
   let text = '\n\n——你与用户之前共读其他书籍的记忆——\n';
-  memories.forEach((m, i) => {
-    text += `${i + 1}. ${m.summary}\n`;
-  });
+  memories.forEach(m => {
+  text += `${m.characterName}: ${m.summary}\n`;
+});
   text += '——请在不突兀的情况下，自然地引用这些过往的阅读经历——';
   return text;
 };
