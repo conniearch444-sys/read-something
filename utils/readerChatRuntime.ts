@@ -820,3 +820,20 @@ export const buildCrossBookMemoryText = (characterName: string): string => {
   text += '——请在不突兀的情况下，自然地引用这些过往的阅读经历——';
   return text;
 };
+
+// 页面加载时，自动将旧书的 chatSummaryCards 同步到跨书记忆库
+(function syncExistingSummariesToCrossBookMemory() {
+  try {
+    const raw = localStorage.getItem(CHAT_HISTORY_STORAGE_KEY);
+    if (!raw) return;
+    const store: ReaderChatStore = JSON.parse(raw);
+    Object.values(store).forEach((bucket) => {
+      if (!bucket || !Array.isArray(bucket.chatSummaryCards)) return;
+      bucket.chatSummaryCards.forEach((card) => {
+        if (card && card.content && bucket.characterName) {
+          saveCrossBookMemory(bucket.characterName, card.content);
+        }
+      });
+    });
+  } catch {}
+})();
