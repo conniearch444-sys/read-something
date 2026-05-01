@@ -2,14 +2,16 @@
 import { ApiConfig, Chapter, ReaderHighlightRange, ReaderPositionState } from '../types';
 import { Character, WorldBookEntry } from '../components/settings/types';
 import {
-  beginConversationGeneration,
-  buildCharacterPromptRecord,
-  buildCrossBookMemoryText,
-  ChatBubble,
-  clamp,
-  compactText,
-  finishConversationGeneration,
-  GenerationMode,
+    beginConversationGeneration,
+    buildCharacterPromptRecord,
+    buildCrossBookMemoryText,
+    ChatBubble,
+    clamp,
+    compactText,
+    finishConversationGeneration,
+    GenerationMode,
+    getChatBucket,
+    saveCrossBookMemory,
 } from './readerChatRuntime';
 
 export interface ReadingContextSnapshot {
@@ -1412,6 +1414,11 @@ export const runConversationGeneration = async (
     if (outerSignal) {
       outerSignal.removeEventListener('abort', forwardAbort);
     }
+    const bucket = getChatBucket(conversationKey);
+if (bucket && bucket.chatSummaryCards.length > 0) {
+  const latestCard = bucket.chatSummaryCards[bucket.chatSummaryCards.length - 1];
+  saveCrossBookMemory(bucket.characterName || characterRealName, latestCard.content);
+}
     finishConversationGeneration(conversationKey, requestId, 'completed');
   }
 };
