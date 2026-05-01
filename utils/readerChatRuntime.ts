@@ -801,8 +801,8 @@ export const saveCrossBookMemory = (
         summary,
         updatedAt: Date.now(),
       });
-      // 每个角色最多保留 10 条记忆
-      const filtered = all.filter(m => m.characterName === characterName).slice(-10);
+      // 每个角色最多保留 100 条记忆
+      const filtered = all.filter(m => m.characterName === characterName).slice(-100);
       const others = all.filter(m => m.characterName !== characterName);
       localStorage.setItem(CROSS_BOOK_MEMORY_KEY, JSON.stringify([...others, ...filtered]));
     }
