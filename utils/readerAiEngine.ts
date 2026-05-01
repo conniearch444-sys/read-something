@@ -4,6 +4,7 @@ import { Character, WorldBookEntry } from '../components/settings/types';
 import {
   beginConversationGeneration,
   buildCharacterPromptRecord,
+  buildCrossBookMemoryText,
   ChatBubble,
   clamp,
   compactText,
@@ -850,6 +851,7 @@ const buildAiPromptLineItems = (params: BuildAiPromptParams): PromptLineItem[] =
   pushPromptLine(lines, 'otherInstructions', triggerModeRule);
   pushPromptLine(lines, 'otherInstructions', '</identity>');
   pushPromptLine(lines, 'otherInstructions', '');
+  pushPromptLine(lines, 'otherInstructions', buildCrossBookMemoryText(characterRealName));
   pushPromptLine(lines, 'otherInstructions', '<char_profile>');
   pushPromptLine(lines, 'worldBook', formatWorldBookSection(characterWorldBookEntries.before, '【以下是补充信息】', characterRealName, userRealName));
   pushPromptLine(lines, 'characterPersona', '【你是谁】');
