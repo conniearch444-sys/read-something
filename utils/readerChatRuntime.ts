@@ -822,18 +822,33 @@ export const buildCrossBookMemoryText = (characterName: string): string => {
 };
 
 // 页面加载时，自动将旧书的 chatSummaryCards 同步到跨书记忆库
-(function syncExistingSummariesToCrossBookMemory() {
+(async function syncExistingSummariesToCrossBookMemory() {
   try {
-    const raw = localStorage.getItem(CHAT_HISTORY_STORAGE_KEY);
-    if (!raw) return;
-    const store: ReaderChatStore = JSON.parse(raw);
-    Object.values(store).forEach((bucket) => {
-      if (!bucket || !Array.isArray(bucket.chatSummaryCards)) return;
-      bucket.chatSummaryCards.forEach((card) => {
-        if (card && card.content && bucket.characterName) {
-          saveCrossBookMemory(bucket.characterName, card.content);
-        }
+    // 优先从 IndexedDB 读取
+    const stored = await getStoredChatHistoryStore();
+    if (stored && Object.keys(stored).length > 0) {
+      const store: ReaderChatStore = normalizeChatStore(stored);
+      Object.values(store).forEach((bucket: ReaderChatBucket) => {
+        if (!bucket || !Array.isArray(bucket.chatSummaryCards)) return;
+        bucket.chatSummaryCards.forEach((card: ReaderSummaryCard) => {
+          if (card && card.content && bucket.characterName) {
+            saveCrossBookMemory(bucket.characterName, card.content);
+          }
+        });
       });
-    });
+    } else {
+      // 回退：从 localStorage 读取旧版数据
+      const raw = localStorage.getItem(CHAT_HISTORY_STORAGE_KEY);
+      if (!raw) return;
+      const store: ReaderChatStore = JSON.parse(raw);
+      Object.values(store).forEach((bucket: ReaderChatBucket) => {
+        if (!bucket || !Array.isArray(bucket.chatSummaryCards)) return;
+        bucket.chatSummaryCards.forEach((card: ReaderSummaryCard) => {
+          if (card && card.content && bucket.characterName) {
+            saveCrossBookMemory(bucket.characterName, card.content);
+          }
+        });
+      });
+    }
   } catch {}
 })();
