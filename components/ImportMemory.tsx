@@ -40,7 +40,7 @@ export default function ImportMemory() {
   const generateSummary = async (messages: Message[]): Promise<string> => {
     const apiConfig = getApiConfig();
     if (!apiConfig || !apiConfig.apiKey) {
-      throw new Error('未找到 API 配置，请先在"设置"中保存 API Key。');
+      throw new Error('未找到 API 配置，请先在“设置”中保存 API Key。');
     }
 
     const endpoint = apiConfig.endpoint.replace(/\/+$/, '');
@@ -76,6 +76,7 @@ export default function ImportMemory() {
 - 紧接一段中文总结（200-400字），用「我」指代自己，用「用户」指代对方
 - 写成一段连贯的话，不要用列表、编号或分点
 - 只写聊天里真实出现过的内容，禁止编造事实妄加揣测
+- 回答必须完整地结束，禁止写一半就停下
 
 【内容要求】
 - 按时间顺序描述对话推进过程
@@ -97,7 +98,7 @@ ${chunks[0]}
         body: JSON.stringify({
           model,
           messages: [{ role: 'user', content: prompt }],
-          max_tokens: 2000,
+          max_tokens: 2500,
           temperature: 0.7,
         }),
       });
@@ -118,6 +119,7 @@ ${chunks[0]}
 - 紧接一段中文总结（150-250字），用「我」指代自己，用「用户」指代对方
 - 写成一段连贯的话，不要用列表、编号或分点
 - 只写聊天里真实出现过的内容，禁止编造事实妄加揣测
+- 回答必须完整地结束，禁止写一半就停下
 
 【内容要求】
 - 按时间顺序描述对话推进过程
@@ -140,7 +142,7 @@ ${chunks[i]}
           body: JSON.stringify({
             model,
             messages: [{ role: 'user', content: prompt }],
-            max_tokens: 1600,
+            max_tokens: 2000,
             temperature: 0.7,
           }),
         });
