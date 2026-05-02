@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { ApiConfig } from './settings/types';
 
 interface Message {
@@ -199,6 +199,75 @@ ${chunks[i]}
     }
   };
 
+  // 记忆管理器交互逻辑
+  useEffect(() => {
+    const KEY = 'cross_book_memories_v1';
+    const listEl = document.getElementById('memory-list');
+    const statusEl = document.getElementById('memory-status');
+    const refreshBtn = document.getElementById('memory-refresh-btn');
+    const deleteSelectedBtn = document.getElementById('memory-delete-selected-btn');
+    const clearAllBtn = document.getElementById('memory-clear-all-btn');
+    if (!listEl || !statusEl || !refreshBtn || !deleteSelectedBtn || !clearAllBtn) return;
+
+    const load = () => {
+      let memories = [];
+      try { memories = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch {}
+      if (!memories.length) {
+        listEl.innerHTML = '<div style="color:#888; padding:8px;">暂无记忆</div>';
+        return memories;
+      }
+      listEl.innerHTML = memories.map((m, i) => `
+        <div style="display:flex; align-items:flex-start; gap:8px; padding:6px 0; border-bottom:1px solid #222; font-size:10px;">
+          <input type="checkbox" id="mm_${i}" style="margin-top:3px;" />
+          <div style="flex:1;">
+            <div><b>${m.characterName || '未知'}</b> · ${new Date(m.updatedAt).toLocaleString('zh-CN')}</div>
+            <div style="color:#aaa; word-break:break-all;">${m.summary || '(空)'}</div>
+          </div>
+        </div>
+      `).join('');
+      return memories;
+    };
+
+    let currentMemories = load();
+
+    const refresh = () => {
+      currentMemories = load();
+      statusEl.textContent = '';
+    };
+    refreshBtn.addEventListener('click', refresh);
+
+    const getSelectedIndices = () => {
+      const indices = [];
+      for (let i = 0; i < currentMemories.length; i++) {
+        const cb = document.getElementById('mm_' + i);
+        if (cb?.checked) indices.push(i);
+      }
+      return indices.sort((a, b) => b - a);
+    };
+
+    deleteSelectedBtn.addEventListener('click', () => {
+      const selected = getSelectedIndices();
+      if (!selected.length) { statusEl.textContent = '请先勾选条目'; return; }
+      if (!confirm(`确认删除 ${selected.length} 条记忆？`)) return;
+      for (const i of selected) currentMemories.splice(i, 1);
+      localStorage.setItem(KEY, JSON.stringify(currentMemories));
+      statusEl.textContent = `✅ 已删除 ${selected.length} 条`;
+      refresh();
+    });
+
+    clearAllBtn.addEventListener('click', () => {
+      if (!confirm('清空所有跨书记忆？此操作不可恢复。')) return;
+      localStorage.setItem(KEY, '[]');
+      currentMemories = [];
+      statusEl.textContent = '✅ 已清空';
+      refresh();
+    });
+
+    return () => {
+      refreshBtn.removeEventListener('click', refresh);
+    };
+  }, []);
+
   return (
     <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto', fontFamily: '-apple-system, sans-serif', color: '#e0e0e0' }}>
       <h2 style={{ color: '#fff', fontSize: '1.2em', marginBottom: '16px' }}>📱 → 📖 跨APP记忆导入</h2>
@@ -224,8 +293,26 @@ ${chunks[i]}
       </div>
 
       {status && (
-        <div style={{ background: status.startsWith('✅') ? '#2a352a' : '#2a2a2a', borderRadius: '12px', padding: '16px', color: status.startsWith('✅') ? '#90c890' : status.startsWith('错误') ? '#d9a0a0' : '#e0e0e0', fontSize: '0.9em' }}>{status}</div>
+        <div style={{ background: status.startsWith('✅') ? '#2a352a' : '#2a2a2a', borderRadius: '12px', padding: '16px', color: status.startsWith('✅') ? '#90c890' : status.startsWith('错误') ? '#d9a0a0' : '#e0e0e0', fontSize: '0.9em', marginBottom: '16px' }}>{status}</div>
       )}
+
+      {/* 跨书记忆管理器 */}
+      <div id="memory-manager" style={{
+        background: '#2a2a2a', borderRadius: '12px', padding: '14px',
+        fontSize: '11px', fontFamily: '-apple-system, sans-serif',
+        marginTop: '8px'
+      }}>
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'8px'}}>
+          <strong style={{color:'#a0d2f0', fontSize:'1em'}}>🧠 跨书记忆管理</strong>
+          <button id="memory-refresh-btn" style={{background:'#333', color:'#ccc', border:'none', borderRadius:'6px', padding:'4px 8px', fontSize:'10px', cursor:'pointer'}}>刷新</button>
+        </div>
+        <div id="memory-list" style={{maxHeight:'160px', overflow:'auto', marginBottom:'8px'}}>加载中...</div>
+        <div style={{display:'flex', gap:'8px'}}>
+          <button id="memory-delete-selected-btn" style={{background:'#d94a4a', color:'#fff', border:'none', borderRadius:'6px', padding:'4px 8px', fontSize:'10px', cursor:'pointer'}}>删除选中</button>
+          <button id="memory-clear-all-btn" style={{background:'#555', color:'#fff', border:'none', borderRadius:'6px', padding:'4px 8px', fontSize:'10px', cursor:'pointer'}}>清空全部</button>
+        </div>
+        <div id="memory-status" style={{marginTop:'6px', fontSize:'10px', color:'#888'}}></div>
+      </div>
     </div>
   );
 }
