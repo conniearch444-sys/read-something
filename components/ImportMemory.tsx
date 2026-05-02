@@ -1,6 +1,4 @@
 import { useState, useRef } from 'react';
-import { callAiModel } from '../utils/readerAiEngine';
-import { ApiConfig } from './settings/types';
 
 interface Message {
   sender: string;
@@ -8,29 +6,37 @@ interface Message {
   timestamp?: number;
 }
 
+interface ApiConfig {
+  provider: string;
+  endpoint: string;
+  apiKey: string;
+  model: string;
+}
+
 export default function ImportMemory() {
   const [status, setStatus] = useState<string>('');
   const [characterName, setCharacterName] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 1. 复用项目已有的 API 配置
-  const getCurrentApiConfig = (): ApiConfig => {
+  // 专门读取“总结专用API”配置
+  const getSummaryApiConfig = (): ApiConfig | null => {
     try {
-      const stored = localStorage.getItem('app_api_config_v1');
-      if (stored) {
-        const parsed = JSON.parse(stored);
+      const raw = localStorage.getItem('app_settings');
+      if (!raw) return null;
+      const settings = JSON.parse(raw);
+      const summaryApi = settings?.readerMore?.feature?.summaryApi;
+      if (summaryApi && summaryApi.apiKey && summaryApi.endpoint) {
         return {
-          provider: parsed.provider || 'CUSTOM',
-          endpoint: parsed.endpoint || '',
-          apiKey: parsed.apiKey || '',
-          model: parsed.model || '',
+          provider: summaryApi.provider || 'CUSTOM',
+          endpoint: summaryApi.endpoint,
+          apiKey: summaryApi.apiKey,
+          model: summaryApi.model || 'claude-sonnet-4-6',
         };
       }
-    } catch (e) {}
-    return { provider: 'CUSTOM', endpoint: '', apiKey: '', model: '' };
+    } catch {}
+    return null;
   };
 
-  // 2. 从JSON里提取对话
   const extractMessages = (jsonData: any): Message[] => {
     const messages = jsonData?.messages || jsonData?.chat_log || jsonData?.conversation || [];
     return messages
@@ -42,13 +48,13 @@ export default function ImportMemory() {
       }));
   };
 
-  // 3. 使用项目自身的 callAiModel 来生成摘要
   const generateSummary = async (messages: Message[]): Promise<string> => {
-    const apiConfig = getCurrentApiConfig();
-    if (!apiConfig.endpoint || !apiConfig.apiKey) {
-      throw new Error('请先在 API 设置中配置好 API 地址和 Key，然后刷新本页面');
+    const apiConfig = getSummaryApiConfig();
+    if (!apiConfig) {
+      throw new Error('未读取到总结专用API配置。请在设置 -> 更多阅读设置中启用并填写总结API。');
     }
 
+    const endpoint = apiConfig.endpoint.replace(/\/+$/, '');
     const conversationText = messages
       .slice(-200)
       .map(msg => `${msg.sender === 'user' ? '用户' : 'AI'}：${msg.text}`)
@@ -61,12 +67,24 @@ ${conversationText}
 
 请输出总结（不超过300字）：`;
 
-    // 核心改变：直接调用项目内置的 AI 对话函数
-    const summary = await callAiModel(prompt, apiConfig);
-    return summary.trim();
+    const response = await fetch(`${endpoint}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiConfig.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: apiConfig.model,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 500,
+        temperature: 0.7,
+      }),
+    });
+
+    const data = await response.json();
+    return (data?.choices?.[0]?.message?.content || '').trim();
   };
 
-  // 4. 处理文件上传
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -110,10 +128,21 @@ ${conversationText}
     }
   };
 
+  const summaryConfig = getSummaryApiConfig();
+
   return (
     <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto', fontFamily: '-apple-system, sans-serif', color: '#e0e0e0' }}>
       <h2 style={{ color: '#fff', fontSize: '1.2em', marginBottom: '16px' }}>📱 → 📖 跨APP记忆导入</h2>
       <p style={{ fontSize: '0.9em', color: '#aaa', marginBottom: '20px' }}>把小手机（EVE/兔K机等）导出的聊天记录JSON文件上传，自动生成摘要并存入对应角色的跨场景记忆库。</p>
+
+      <div style={{ background: '#2a2a2a', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
+        <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: '#a0d2f0' }}>⚙️ API 状态</h3>
+        <p style={{ fontSize: '0.85em', color: summaryConfig ? '#90c890' : '#d9a0a0' }}>
+          {summaryConfig
+            ? `✅ 已读取总结专用API (模型: ${summaryConfig.model || '未设置'})`
+            : '❌ 未读取到总结API配置。请在网站设置 -> 更多阅读设置中启用并填写总结专用API。'}
+        </p>
+      </div>
 
       <div style={{ background: '#2a2a2a', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
         <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: '#a0d2f0' }}>👤 角色名</h3>
