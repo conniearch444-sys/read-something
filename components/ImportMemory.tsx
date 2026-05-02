@@ -10,12 +10,10 @@ interface Message {
 export default function ImportMemory({ theme }: { theme: ThemeClasses }) {
   const [status, setStatus] = useState<string>('');
   const [characterName, setCharacterName] = useState<string>('');
+  const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 根据全局 theme 生成统一配色
   const colors = {
-    bg: theme.isDarkMode ? '#2d3748' : '#e0e5ec',
-    cardBg: theme.isDarkMode ? '#1a202c' : '#f0f2f5',
     text: theme.isDarkMode ? '#e2e8f0' : '#4a5568',
     subText: theme.isDarkMode ? '#a0aec0' : '#718096',
     border: theme.isDarkMode ? '#4a5568' : '#e2e8f0',
@@ -24,12 +22,8 @@ export default function ImportMemory({ theme }: { theme: ThemeClasses }) {
     neutral: theme.isDarkMode ? '#4a5568' : '#a0aec0',
     inputBg: theme.isDarkMode ? '#1a202c' : '#ffffff',
     inputBorder: theme.isDarkMode ? '#4a5568' : '#e2e8f0',
-    buttonPrimary: 'rgb(var(--theme-400) / 1)',
     success: theme.isDarkMode ? '#90c890' : '#276749',
     error: theme.isDarkMode ? '#d9a0a0' : '#c53030',
-    cardShadow: theme.isDarkMode
-      ? '0 4px 12px rgba(0,0,0,0.3)'
-      : '5px 5px 10px #d1d5db, -5px -5px 10px #ffffff',
     listBg: theme.isDarkMode ? '#0d1117' : '#f7f8fa',
   };
 
@@ -200,19 +194,19 @@ ${chunks[i]}
       let memories = [];
       try { memories = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch {}
       if (!memories.length) {
-        listEl.innerHTML = `<div style="color:${colors.subText}; padding:8px;">暂无记忆</div>`;
+        listEl.innerHTML = `<div style="color:${colors.subText}; padding:8px; font-size:12px;">暂无记忆</div>`;
         return memories;
       }
       listEl.innerHTML = memories.map((m, i) => `
-        <div style="padding:6px 0; border-bottom:1px solid ${colors.border}; font-size:10px; color:${colors.text};">
+        <div style="padding:6px 0; border-bottom:1px solid ${colors.border}; font-size:12px; color:${colors.text};">
           <div style="display:flex; align-items:flex-start; gap:8px; cursor:pointer;" data-memory-index="${i}">
             <input type="checkbox" id="mm_${i}" style="margin-top:3px; flex-shrink:0;" onclick="event.stopPropagation();" />
             <div style="flex:1; min-width:0;">
-              <div style="font-weight:bold;">${m.characterName || '未知'} · ${new Date(m.updatedAt).toLocaleString('zh-CN')}</div>
-              <div id="memory-content-${i}" class="memory-text" style="color:${colors.subText}; word-break:break-all; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;">
+              <div style="font-weight:bold; font-size:12px;">${m.characterName || '未知'} · ${new Date(m.updatedAt).toLocaleString('zh-CN')}</div>
+              <div id="memory-content-${i}" class="memory-text" style="color:${colors.subText}; word-break:break-all; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; font-size:12px;">
                 ${m.summary || '(空)'}
               </div>
-              <div id="memory-content-full-${i}" class="memory-text-full" style="color:${colors.subText}; word-break:break-all; display:none; max-height:200px; overflow-y:auto; WebkitOverflowScrolling:touch; margin-top:4px;">
+              <div id="memory-content-full-${i}" class="memory-text-full" style="color:${colors.subText}; word-break:break-all; display:none; max-height:200px; overflow-y:auto; WebkitOverflowScrolling:touch; margin-top:4px; font-size:12px;">
                 ${m.summary || '(空)'}
               </div>
             </div>
@@ -281,100 +275,137 @@ ${chunks[i]}
   }, [theme.isDarkMode]);
 
   return (
-    <div style={{ padding: '20px', margin: '0', fontFamily: '-apple-system, sans-serif', color: colors.text, background: 'transparent' }}>
-      <h2 style={{ color: colors.accent, fontSize: '1.2em', marginBottom: '16px' }}>📱 → 📖 跨APP记忆导入</h2>
-      <p style={{ fontSize: '0.9em', color: colors.subText, marginBottom: '20px' }}>把小手机（EVE/兔K机等）导出的聊天记录JSON文件上传，自动分段总结，每段独立存储为一条记忆卡片。</p>
+    <div style={{ padding: '0', margin: '24px 0 0 0', fontFamily: '-apple-system, sans-serif', color: colors.text, background: 'transparent' }}>
+      {/* 折叠按钮 */}
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className={theme.cardClass}
+        style={{
+          width: '100%', padding: '14px 16px',
+          border: `2px dashed ${theme.isDarkMode ? '#4a5568' : '#cbd5e0'}`,
+          borderRadius: '16px',
+          textAlign: 'center',
+          cursor: 'pointer',
+          color: colors.subText,
+          fontSize: '14px',
+          fontWeight: 500,
+          background: 'transparent',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '8px',
+          transition: 'border-color 0.2s',
+          boxSizing: 'border-box',
+        }}
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgb(var(--theme-400) / 1)';
+          (e.currentTarget as HTMLButtonElement).style.color = 'rgb(var(--theme-400) / 1)';
+        }}
+        onMouseLeave={(e) => {
+          (e.currentTarget as HTMLButtonElement).style.borderColor = theme.isDarkMode ? '#4a5568' : '#cbd5e0';
+          (e.currentTarget as HTMLButtonElement).style.color = colors.subText;
+        }}
+      >
+        <span style={{ fontSize: '18px' }}>{isExpanded ? '📖' : '📱'}</span>
+        <span>跨APP记忆导入与管理</span>
+        <span style={{ fontSize: '12px', marginLeft: '4px' }}>{isExpanded ? '▲' : '▼'}</span>
+      </button>
 
-      <div style={{ background: colors.cardBg, borderRadius: '12px', padding: '16px', marginBottom: '16px', border: `1px solid ${colors.border}`, boxShadow: colors.cardShadow }}>
-        <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: colors.accent }}>⚙️ 状态</h3>
-        <p style={{ fontSize: '0.85em', color: getApiConfig() ? colors.success : colors.error }}>
-          {getApiConfig() ? '✅ 已读取到网站API配置，可直接上传文件' : '❌ 未读取到配置，请先在网站"设置"中保存API Key'}
-        </p>
-      </div>
+      {/* 可折叠内容 */}
+      {isExpanded && (
+        <div style={{ marginTop: '20px' }}>
+          <p style={{ fontSize: '0.9em', color: colors.subText, marginBottom: '20px' }}>
+            把小手机（EVE/兔K机等）导出的聊天记录JSON文件上传，自动分段总结，每段独立存储为一条记忆卡片。
+          </p>
 
-      <div style={{ background: colors.cardBg, borderRadius: '12px', padding: '16px', marginBottom: '16px', border: `1px solid ${colors.border}`, boxShadow: colors.cardShadow }}>
-        <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: colors.accent }}>👤 角色名</h3>
-        <input
-          type="text"
-          placeholder="留空则自动识别 (如温时序)"
-          value={characterName}
-          onChange={(e) => setCharacterName(e.target.value)}
-          style={{
-            width: '100%', padding: '10px', margin: '6px 0',
-            background: colors.inputBg, border: `1px solid ${colors.inputBorder}`,
-            borderRadius: '8px', color: colors.text, fontSize: '0.9em', boxSizing: 'border-box'
-          }}
-        />
-        <p style={{ fontSize: '0.8em', color: colors.subText, margin: '8px 0 0 0' }}>如果JSON里有角色名会自动识别，也可以手动填写</p>
-      </div>
+          <div className={theme.cardClass} style={{ borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
+            <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: colors.accent }}>⚙️ 状态</h3>
+            <p style={{ fontSize: '0.85em', color: getApiConfig() ? colors.success : colors.error }}>
+              {getApiConfig() ? '✅ 已读取到网站API配置，可直接上传文件' : '❌ 未读取到配置，请先在网站"设置"中保存API Key'}
+            </p>
+          </div>
 
-      <div style={{ background: colors.cardBg, borderRadius: '12px', padding: '16px', marginBottom: '16px', border: `1px solid ${colors.border}`, boxShadow: colors.cardShadow }}>
-        <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: colors.accent }}>📂 上传文件</h3>
-        <input type="file" accept=".json" ref={fileInputRef} onChange={handleFileUpload} style={{ display: 'none' }} />
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          style={{
-            background: colors.accent,
-            color: '#fff',
-            border: 'none',
-            padding: '12px 20px',
-            borderRadius: '8px',
-            fontSize: '1em',
-            cursor: 'pointer',
-            fontWeight: 'bold',
-          }}
-        >
-          选择JSON文件并开始导入
-        </button>
-      </div>
+          <div className={theme.cardClass} style={{ borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
+            <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: colors.accent }}>👤 角色名</h3>
+            <input
+              type="text"
+              placeholder="留空则自动识别 (如温时序)"
+              value={characterName}
+              onChange={(e) => setCharacterName(e.target.value)}
+              className={theme.inputClass}
+              style={{
+                width: '100%', padding: '10px', margin: '6px 0',
+                borderRadius: '8px', fontSize: '0.9em', boxSizing: 'border-box'
+              }}
+            />
+            <p style={{ fontSize: '0.8em', color: colors.subText, margin: '8px 0 0 0' }}>如果JSON里有角色名会自动识别，也可以手动填写</p>
+          </div>
 
-      {status && (
-        <div style={{
-          background: status.startsWith('✅') ? (theme.isDarkMode ? '#2a352a' : '#e6fffa') : (theme.isDarkMode ? '#2a2a2a' : '#fff5f5'),
-          borderRadius: '12px', padding: '16px',
-          color: status.startsWith('✅') ? colors.success : colors.error,
-          fontSize: '0.9em', marginBottom: '16px', border: `1px solid ${colors.border}`,
-          boxShadow: colors.cardShadow
-        }}>
-          {status}
+          <div className={theme.cardClass} style={{ borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
+            <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: colors.accent }}>📂 上传文件</h3>
+            <input type="file" accept=".json" ref={fileInputRef} onChange={handleFileUpload} style={{ display: 'none' }} />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className={theme.btnClass}
+              style={{
+                background: colors.accent,
+                color: '#fff',
+                border: 'none',
+                padding: '12px 20px',
+                borderRadius: '8px',
+                fontSize: '1em',
+                cursor: 'pointer',
+                fontWeight: 'bold',
+              }}
+            >
+              选择JSON文件并开始导入
+            </button>
+          </div>
+
+          {status && (
+            <div className={theme.cardClass} style={{
+              borderRadius: '12px', padding: '16px',
+              color: status.startsWith('✅') ? colors.success : colors.error,
+              fontSize: '0.9em', marginBottom: '16px',
+            }}>
+              {status}
+            </div>
+          )}
+
+          {/* 跨书记忆管理器 */}
+          <div id="memory-manager" className={theme.cardClass} style={{
+            borderRadius: '12px', padding: '14px',
+            fontSize: '12px', fontFamily: '-apple-system, sans-serif',
+          }}>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'8px'}}>
+              <strong style={{color: colors.accent, fontSize:'1em'}}>🧠 跨书记忆管理</strong>
+              <button id="memory-refresh-btn" className={theme.btnClass} style={{
+                background: colors.neutral, color: '#fff', border:'none',
+                borderRadius:'6px', padding:'4px 8px', fontSize:'12px', cursor:'pointer'
+              }}>刷新</button>
+            </div>
+            <div id="memory-list" style={{
+              maxHeight:'400px', overflowY:'auto',
+              WebkitOverflowScrolling:'touch', touchAction:'pan-y',
+              marginBottom:'8px', border:`1px solid ${colors.border}`,
+              borderRadius:'6px', padding:'4px',
+              background: colors.listBg,
+              fontSize: '12px'
+            }}>加载中...</div>
+            <div style={{display:'flex', gap:'8px'}}>
+              <button id="memory-delete-selected-btn" className={theme.btnClass} style={{
+                background: colors.danger, color: '#fff', border:'none',
+                borderRadius:'6px', padding:'4px 8px', fontSize:'12px', cursor:'pointer'
+              }}>删除选中</button>
+              <button id="memory-clear-all-btn" className={theme.btnClass} style={{
+                background: colors.neutral, color: '#fff', border:'none',
+                borderRadius:'6px', padding:'4px 8px', fontSize:'12px', cursor:'pointer'
+              }}>清空全部</button>
+            </div>
+            <div id="memory-status" style={{marginTop:'6px', fontSize:'12px', color: colors.subText}}></div>
+          </div>
         </div>
       )}
-
-      {/* 跨书记忆管理器 */}
-      <div id="memory-manager" style={{
-        background: colors.cardBg,
-        borderRadius: '12px', padding: '14px',
-        fontSize: '11px', fontFamily: '-apple-system, sans-serif',
-        marginTop: '8px',
-        border: `1px solid ${colors.border}`,
-        boxShadow: colors.cardShadow
-      }}>
-        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'8px'}}>
-          <strong style={{color: colors.accent, fontSize:'1em'}}>🧠 跨书记忆管理</strong>
-          <button id="memory-refresh-btn" style={{
-            background: colors.neutral, color: '#fff', border:'none',
-            borderRadius:'6px', padding:'4px 8px', fontSize:'10px', cursor:'pointer'
-          }}>刷新</button>
-        </div>
-        <div id="memory-list" style={{
-          maxHeight:'400px', overflowY:'auto',
-          WebkitOverflowScrolling:'touch', touchAction:'pan-y',
-          marginBottom:'8px', border:`1px solid ${colors.border}`,
-          borderRadius:'6px', padding:'4px',
-          background: colors.listBg
-        }}>加载中...</div>
-        <div style={{display:'flex', gap:'8px'}}>
-          <button id="memory-delete-selected-btn" style={{
-            background: colors.danger, color: '#fff', border:'none',
-            borderRadius:'6px', padding:'4px 8px', fontSize:'10px', cursor:'pointer'
-          }}>删除选中</button>
-          <button id="memory-clear-all-btn" style={{
-            background: colors.neutral, color: '#fff', border:'none',
-            borderRadius:'6px', padding:'4px 8px', fontSize:'10px', cursor:'pointer'
-          }}>清空全部</button>
-        </div>
-        <div id="memory-status" style={{marginTop:'6px', fontSize:'10px', color: colors.subText}}></div>
-      </div>
     </div>
   );
-        }
+}
