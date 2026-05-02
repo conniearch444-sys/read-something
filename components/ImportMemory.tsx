@@ -1,4 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
+import { callAiModel } from '../utils/readerAiEngine';
+import { ApiConfig } from './settings/types';
 
 interface Message {
   sender: string;
@@ -6,40 +8,29 @@ interface Message {
   timestamp?: number;
 }
 
-const API_STORAGE_KEY = 'import_memory_api_config';
-
 export default function ImportMemory() {
   const [status, setStatus] = useState<string>('');
   const [characterName, setCharacterName] = useState<string>('');
-  const [apiEndpoint, setApiEndpoint] = useState<string>('');
-  const [apiKey, setApiKey] = useState<string>('');
-  const [modelName, setModelName] = useState<string>('claude-sonnet-4-6');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 页面打开时，自动读取之前保存的 API 配置
-  useEffect(() => {
+  // 1. 复用项目已有的 API 配置
+  const getCurrentApiConfig = (): ApiConfig => {
     try {
-      const stored = localStorage.getItem(API_STORAGE_KEY);
+      const stored = localStorage.getItem('app_api_config_v1');
       if (stored) {
-        const config = JSON.parse(stored);
-        if (config.apiEndpoint) setApiEndpoint(config.apiEndpoint);
-        if (config.apiKey) setApiKey(config.apiKey);
-        if (config.modelName) setModelName(config.modelName);
+        const parsed = JSON.parse(stored);
+        return {
+          provider: parsed.provider || 'CUSTOM',
+          endpoint: parsed.endpoint || '',
+          apiKey: parsed.apiKey || '',
+          model: parsed.model || '',
+        };
       }
-    } catch {}
-  }, []);
+    } catch (e) {}
+    return { provider: 'CUSTOM', endpoint: '', apiKey: '', model: '' };
+  };
 
-  // API 信息变化时自动保存
-  useEffect(() => {
-    if (apiEndpoint || apiKey || modelName) {
-      localStorage.setItem(API_STORAGE_KEY, JSON.stringify({
-        apiEndpoint,
-        apiKey,
-        modelName,
-      }));
-    }
-  }, [apiEndpoint, apiKey, modelName]);
-
+  // 2. 从JSON里提取对话
   const extractMessages = (jsonData: any): Message[] => {
     const messages = jsonData?.messages || jsonData?.chat_log || jsonData?.conversation || [];
     return messages
@@ -51,8 +42,12 @@ export default function ImportMemory() {
       }));
   };
 
+  // 3. 使用项目自身的 callAiModel 来生成摘要
   const generateSummary = async (messages: Message[]): Promise<string> => {
-    if (!apiEndpoint || !apiKey) throw new Error('请先填写 API 地址和 Key');
+    const apiConfig = getCurrentApiConfig();
+    if (!apiConfig.endpoint || !apiConfig.apiKey) {
+      throw new Error('请先在 API 设置中配置好 API 地址和 Key，然后刷新本页面');
+    }
 
     const conversationText = messages
       .slice(-200)
@@ -66,24 +61,12 @@ ${conversationText}
 
 请输出总结（不超过300字）：`;
 
-    const response = await fetch(`${apiEndpoint.replace(/\/+$/, '')}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: modelName,
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 500,
-        temperature: 0.7,
-      }),
-    });
-
-    const data = await response.json();
-    return (data?.choices?.[0]?.message?.content || '').trim();
+    // 核心改变：直接调用项目内置的 AI 对话函数
+    const summary = await callAiModel(prompt, apiConfig);
+    return summary.trim();
   };
 
+  // 4. 处理文件上传
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -131,16 +114,6 @@ ${conversationText}
     <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto', fontFamily: '-apple-system, sans-serif', color: '#e0e0e0' }}>
       <h2 style={{ color: '#fff', fontSize: '1.2em', marginBottom: '16px' }}>📱 → 📖 跨APP记忆导入</h2>
       <p style={{ fontSize: '0.9em', color: '#aaa', marginBottom: '20px' }}>把小手机（EVE/兔K机等）导出的聊天记录JSON文件上传，自动生成摘要并存入对应角色的跨场景记忆库。</p>
-
-      <div style={{ background: '#2a2a2a', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
-        <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: '#a0d2f0' }}>⚙️ API 配置（只需填一次，自动记住）</h3>
-        <input type="text" placeholder="API地址 (如 https://api.xxx.com)" value={apiEndpoint} onChange={(e) => setApiEndpoint(e.target.value)} style={inputStyle} />
-        <input type="password" placeholder="API Key" value={apiKey} onChange={(e) => setApiKey(e.target.value)} style={inputStyle} />
-        <input type="text" placeholder="模型名称 (如 claude-sonnet-4-6)" value={modelName} onChange={(e) => setModelName(e.target.value)} style={inputStyle} />
-        <p style={{ fontSize: '0.75em', color: '#888', margin: '6px 0 0 0' }}>
-          填过一次后会自动保存，下次打开不用再填。
-        </p>
-      </div>
 
       <div style={{ background: '#2a2a2a', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
         <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: '#a0d2f0' }}>👤 角色名</h3>
