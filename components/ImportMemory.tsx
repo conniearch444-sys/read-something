@@ -306,7 +306,7 @@ ${chunks[i]}
           <strong style={{color:'#a0d2f0', fontSize:'1em'}}>🧠 跨书记忆管理</strong>
           <button id="memory-refresh-btn" style={{background:'#333', color:'#ccc', border:'none', borderRadius:'6px', padding:'4px 8px', fontSize:'10px', cursor:'pointer'}}>刷新</button>
         </div>
-        <div id="memory-list" style={{maxHeight:'160px', overflow:'auto', marginBottom:'8px'}}>加载中...</div>
+        <div id="memory-list" style={{maxHeight:'260px', overflowY:'auto', WebkitOverflowScrolling:'touch', touchAction:'pan-y', marginBottom:'8px', border:'1px solid #333', borderRadius:'6px', padding:'4px'}}>加载中...</div>
         <div style={{display:'flex', gap:'8px'}}>
           <button id="memory-delete-selected-btn" style={{background:'#d94a4a', color:'#fff', border:'none', borderRadius:'6px', padding:'4px 8px', fontSize:'10px', cursor:'pointer'}}>删除选中</button>
           <button id="memory-clear-all-btn" style={{background:'#555', color:'#fff', border:'none', borderRadius:'6px', padding:'4px 8px', fontSize:'10px', cursor:'pointer'}}>清空全部</button>
