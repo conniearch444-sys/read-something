@@ -12,7 +12,6 @@ export default function ImportMemory() {
   const [characterName, setCharacterName] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 读取主 API 配置
   const getApiConfig = (): ApiConfig | null => {
     try {
       const raw = localStorage.getItem('app_api_config');
@@ -26,7 +25,6 @@ export default function ImportMemory() {
     return null;
   };
 
-  // 从JSON里提取对话
   const extractMessages = (jsonData: any): Message[] => {
     const messages = jsonData?.messages || jsonData?.chat_log || jsonData?.conversation || [];
     return messages
@@ -38,7 +36,6 @@ export default function ImportMemory() {
       }));
   };
 
-  // 调用 AI 生成摘要（自动分段总结 + 合并）
   const generateSummary = async (messages: Message[]): Promise<string> => {
     const apiConfig = getApiConfig();
     if (!apiConfig || !apiConfig.apiKey) {
@@ -48,7 +45,6 @@ export default function ImportMemory() {
     const endpoint = apiConfig.endpoint.replace(/\/+$/, '');
     const model = apiConfig.model || 'claude-sonnet-4-6';
 
-    // 每段 150 条，防止漏掉前半部分
     const chunkSize = 150;
     const chunks: string[] = [];
     for (let i = 0; i < messages.length; i += chunkSize) {
@@ -60,11 +56,9 @@ export default function ImportMemory() {
       );
     }
 
-    // 只有一段时直接总结
+    // 只有一段
     if (chunks.length === 1) {
-      const prompt = `以下是一段用户与AI角色（${characterName || '未知角色'}）的对话记录。请写一段不超过500字的记忆总结。
-
-**必须包含：具体话题、用户分享的个人信息（地点/心情/计划等）、角色的具体情感反应、值得记住的细节。**
+      const prompt = `以下是一段用户与AI角色的对话记录。请写一段不超过500字的记忆总结，包含具体话题、用户分享的个人信息（地点/心情/计划等）、角色的情感反应、值得记住的细节。
 
 对话记录：
 ${chunks[0]}
@@ -88,10 +82,12 @@ ${chunks[0]}
       return (data?.choices?.[0]?.message?.content || '').trim();
     }
 
-    // 多段：先各自总结
+    // 多段：各自总结，直接拼接，不二次合并
     const partSummaries: string[] = [];
     for (let i = 0; i < chunks.length; i++) {
-      const prompt = `以下是一段用户与AI角色（${characterName || '未知角色'}）的对话记录（第${i + 1}部分，共${chunks.length}部分）。请写一段不超过300字的要点总结，包含具体话题和关键细节。
+      setStatus(`正在总结第 ${i + 1}/${chunks.length} 部分...`);
+
+      const prompt = `以下是一段用户与AI角色的对话记录（第${i + 1}部分，共${chunks.length}部分）。请写一段不超过300字的要点总结，包含具体话题、关键细节、用户分享的个人信息、角色的情感反应。
 
 对话记录：
 ${chunks[i]}
@@ -107,41 +103,21 @@ ${chunks[i]}
         body: JSON.stringify({
           model,
           messages: [{ role: 'user', content: prompt }],
-          max_tokens: 800,
+          max_tokens: 1000,
           temperature: 0.7,
         }),
       });
       const data = await response.json();
       const partText = (data?.choices?.[0]?.message?.content || '').trim();
-      if (partText) partSummaries.push(`第${i + 1}部分：${partText}`);
+      if (partText) {
+        partSummaries.push(`【第${i + 1}部分】${partText}`);
+      }
     }
 
-    // 合并所有分段总结
-    const mergePrompt = `以下是对同一段对话的分段总结，请把各段总结合并成一段完整的记忆总结。必须包含所有部分的重要话题，不遗漏每一段的核心内容。不超过800字。
-
-分段总结：
-${partSummaries.join('\n\n')}
-
-请输出合并后的完整记忆总结：`;
-
-    const mergeResponse = await fetch(`${endpoint}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiConfig.apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: 'user', content: mergePrompt }],
-        max_tokens: 2000,
-        temperature: 0.7,
-      }),
-    });
-    const mergeData = await mergeResponse.json();
-    return (mergeData?.choices?.[0]?.message?.content || partSummaries.join('\n')).trim();
+    // 直接拼接，保留完整信息
+    return partSummaries.join('\n\n');
   };
 
-  // 文件上传
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -153,7 +129,7 @@ ${partSummaries.join('\n\n')}
         const jsonData = JSON.parse(rawText);
         const messages = extractMessages(jsonData);
         if (messages.length === 0) { setStatus('错误：没找到可用的对话记录'); return; }
-        setStatus(`提取了 ${messages.length} 条对话，正在调用AI生成摘要...`);
+        setStatus(`提取了 ${messages.length} 条对话，开始分段总结...`);
         
         let detectedName = characterName;
         if (!detectedName && jsonData?.character?.name) detectedName = jsonData.character.name;
@@ -174,7 +150,7 @@ ${partSummaries.join('\n\n')}
           const forOthers = existingMemories.filter((m: any) => m.characterName !== detectedName);
           localStorage.setItem('cross_book_memories_v1', JSON.stringify([...forOthers, ...forThisChar]));
           
-          setStatus(`✅ 成功！已为「${detectedName}」存储记忆。摘要预览：${summary.slice(0, 100)}...`);
+          setStatus(`✅ 成功！已为「${detectedName}」存储记忆（共 ${summary.length} 字）。摘要预览：${summary.slice(0, 150)}...`);
         } catch (apiError) {
           setStatus(`调用AI失败：${apiError instanceof Error ? apiError.message : '请检查API配置'}`);
         }
@@ -188,7 +164,7 @@ ${partSummaries.join('\n\n')}
   return (
     <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto', fontFamily: '-apple-system, sans-serif', color: '#e0e0e0' }}>
       <h2 style={{ color: '#fff', fontSize: '1.2em', marginBottom: '16px' }}>📱 → 📖 跨APP记忆导入</h2>
-      <p style={{ fontSize: '0.9em', color: '#aaa', marginBottom: '20px' }}>把小手机（EVE/兔K机等）导出的聊天记录JSON文件上传，自动生成摘要并存入对应角色的跨场景记忆库。</p>
+      <p style={{ fontSize: '0.9em', color: '#aaa', marginBottom: '20px' }}>把小手机（EVE/兔K机等）导出的聊天记录JSON文件上传，自动分段总结并存入对应角色的跨场景记忆库。</p>
 
       <div style={{ background: '#2a2a2a', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
         <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: '#a0d2f0' }}>⚙️ 状态</h3>
