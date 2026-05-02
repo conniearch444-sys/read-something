@@ -45,7 +45,6 @@ export default function ImportMemory() {
     const endpoint = apiConfig.endpoint.replace(/\/+$/, '');
     const model = apiConfig.model || 'claude-sonnet-4-6';
 
-    // 保留所有对话，分段总结
     const chunkSize = 150;
     const chunks: string[] = [];
     for (let i = 0; i < messages.length; i += chunkSize) {
@@ -66,7 +65,6 @@ export default function ImportMemory() {
 
     if (chunks.length === 0) return '';
 
-    // 只有一段时直接总结
     if (chunks.length === 1) {
       const prompt = `你是${characterName || '角色'}，正在回顾和用户的聊天。
 
@@ -98,7 +96,7 @@ ${chunks[0]}
         body: JSON.stringify({
           model,
           messages: [{ role: 'user', content: prompt }],
-          max_tokens: 1500,
+          max_tokens: 2000,
           temperature: 0.7,
         }),
       });
@@ -106,7 +104,6 @@ ${chunks[0]}
       return (data?.choices?.[0]?.message?.content || '').trim();
     }
 
-    // 多段：先各自总结，再拼接
     const partSummaries: string[] = [];
     for (let i = 0; i < chunks.length; i++) {
       setStatus(`正在总结第 ${i + 1}/${chunks.length} 部分...`);
@@ -142,7 +139,7 @@ ${chunks[i]}
           body: JSON.stringify({
             model,
             messages: [{ role: 'user', content: prompt }],
-            max_tokens: 800,
+            max_tokens: 1600,
             temperature: 0.7,
           }),
         });
@@ -156,7 +153,6 @@ ${chunks[i]}
       }
     }
 
-    // 直接拼接，保留完整信息
     return partSummaries.join('\n\n');
   };
 
