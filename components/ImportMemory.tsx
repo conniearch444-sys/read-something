@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { ApiConfig } from './settings/types';
+import { ApiConfig, ThemeClasses } from './settings/types';
 
 interface Message {
   sender: string;
@@ -7,10 +7,27 @@ interface Message {
   timestamp?: number;
 }
 
-export default function ImportMemory() {
+export default function ImportMemory({ theme }: { theme: ThemeClasses }) {
   const [status, setStatus] = useState<string>('');
   const [characterName, setCharacterName] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 根据全局 theme 生成统一配色
+  const colors = {
+    bg: theme.isDarkMode ? '#2d3748' : '#e0e5ec',
+    cardBg: theme.isDarkMode ? '#1a202c' : '#ffffff',
+    text: theme.isDarkMode ? '#e2e8f0' : '#4a5568',
+    subText: theme.isDarkMode ? '#a0aec0' : '#718096',
+    border: theme.isDarkMode ? '#4a5568' : '#cbd5e0',
+    accent: 'rgb(var(--theme-400) / 1)',
+    danger: '#d94a4a',
+    neutral: theme.isDarkMode ? '#4a5568' : '#a0aec0',
+    inputBg: theme.isDarkMode ? '#1a202c' : '#ffffff',
+    inputBorder: theme.isDarkMode ? '#4a5568' : '#cbd5e0',
+    buttonPrimary: 'rgb(var(--theme-400) / 1)',
+    success: '#90c890',
+    error: '#d9a0a0',
+  };
 
   const getApiConfig = (): ApiConfig | null => {
     try {
@@ -39,7 +56,7 @@ export default function ImportMemory() {
   const generateSummaries = async (messages: Message[]): Promise<string[]> => {
     const apiConfig = getApiConfig();
     if (!apiConfig || !apiConfig.apiKey) {
-      throw new Error('未找到 API 配置，请先在"设置"中保存 API Key。');
+      throw new Error('未找到 API 配置，请先在“设置”中保存 API Key。');
     }
 
     const endpoint = apiConfig.endpoint.replace(/\/+$/, '');
@@ -179,19 +196,19 @@ ${chunks[i]}
       let memories = [];
       try { memories = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch {}
       if (!memories.length) {
-        listEl.innerHTML = '<div style="color:#888; padding:8px;">暂无记忆</div>';
+        listEl.innerHTML = `<div style="color:${colors.subText}; padding:8px;">暂无记忆</div>`;
         return memories;
       }
       listEl.innerHTML = memories.map((m, i) => `
-        <div style="padding:6px 0; border-bottom:1px solid #333; font-size:10px;">
+        <div style="padding:6px 0; border-bottom:1px solid ${colors.border}; font-size:10px; color:${colors.text};">
           <div style="display:flex; align-items:flex-start; gap:8px; cursor:pointer;" data-memory-index="${i}">
             <input type="checkbox" id="mm_${i}" style="margin-top:3px; flex-shrink:0;" onclick="event.stopPropagation();" />
             <div style="flex:1; min-width:0;">
-              <div><b>${m.characterName || '未知'}</b> · ${new Date(m.updatedAt).toLocaleString('zh-CN')}</div>
-              <div id="memory-content-${i}" class="memory-text" style="color:#aaa; word-break:break-all; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;">
+              <div style="font-weight:bold;">${m.characterName || '未知'} · ${new Date(m.updatedAt).toLocaleString('zh-CN')}</div>
+              <div id="memory-content-${i}" class="memory-text" style="color:${colors.subText}; word-break:break-all; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;">
                 ${m.summary || '(空)'}
               </div>
-              <div id="memory-content-full-${i}" class="memory-text-full" style="color:#aaa; word-break:break-all; display:none; max-height:200px; overflow-y:auto; WebkitOverflowScrolling:touch; margin-top:4px;">
+              <div id="memory-content-full-${i}" class="memory-text-full" style="color:${colors.subText}; word-break:break-all; display:none; max-height:200px; overflow-y:auto; WebkitOverflowScrolling:touch; margin-top:4px;">
                 ${m.summary || '(空)'}
               </div>
             </div>
@@ -257,59 +274,100 @@ ${chunks[i]}
     return () => {
       refreshBtn.removeEventListener('click', refresh);
     };
-  }, []);
+  }, [theme.isDarkMode]);
 
   return (
-    <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto', fontFamily: '-apple-system, sans-serif', color: '#e0e0e0' }}>
-      <h2 style={{ color: '#fff', fontSize: '1.2em', marginBottom: '16px' }}>📱 → 📖 跨APP记忆导入</h2>
-      <p style={{ fontSize: '0.9em', color: '#aaa', marginBottom: '20px' }}>把小手机（EVE/兔K机等）导出的聊天记录JSON文件上传，自动分段总结，每段独立存储为一条记忆卡片。</p>
+    <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto', fontFamily: '-apple-system, sans-serif', color: colors.text, background: 'transparent' }}>
+      <h2 style={{ color: colors.accent, fontSize: '1.2em', marginBottom: '16px' }}>📱 → 📖 跨APP记忆导入</h2>
+      <p style={{ fontSize: '0.9em', color: colors.subText, marginBottom: '20px' }}>把小手机（EVE/兔K机等）导出的聊天记录JSON文件上传，自动分段总结，每段独立存储为一条记忆卡片。</p>
 
-      <div style={{ background: '#2a2a2a', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
-        <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: '#a0d2f0' }}>⚙️ 状态</h3>
-        <p style={{ fontSize: '0.85em', color: getApiConfig() ? '#90c890' : '#d9a0a0' }}>
+      <div style={{ background: colors.cardBg, borderRadius: '12px', padding: '16px', marginBottom: '16px', border: `1px solid ${colors.border}` }}>
+        <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: colors.accent }}>⚙️ 状态</h3>
+        <p style={{ fontSize: '0.85em', color: getApiConfig() ? colors.success : colors.error }}>
           {getApiConfig() ? '✅ 已读取到网站API配置，可直接上传文件' : '❌ 未读取到配置，请先在网站"设置"中保存API Key'}
         </p>
       </div>
 
-      <div style={{ background: '#2a2a2a', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
-        <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: '#a0d2f0' }}>👤 角色名</h3>
-        <input type="text" placeholder="留空则自动识别 (如温时序)" value={characterName} onChange={(e) => setCharacterName(e.target.value)} style={inputStyle} />
-        <p style={{ fontSize: '0.8em', color: '#888', margin: '8px 0 0 0' }}>如果JSON里有角色名会自动识别，也可以手动填写</p>
+      <div style={{ background: colors.cardBg, borderRadius: '12px', padding: '16px', marginBottom: '16px', border: `1px solid ${colors.border}` }}>
+        <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: colors.accent }}>👤 角色名</h3>
+        <input
+          type="text"
+          placeholder="留空则自动识别 (如温时序)"
+          value={characterName}
+          onChange={(e) => setCharacterName(e.target.value)}
+          style={{
+            width: '100%', padding: '10px', margin: '6px 0',
+            background: colors.inputBg, border: `1px solid ${colors.inputBorder}`,
+            borderRadius: '8px', color: colors.text, fontSize: '0.9em', boxSizing: 'border-box'
+          }}
+        />
+        <p style={{ fontSize: '0.8em', color: colors.subText, margin: '8px 0 0 0' }}>如果JSON里有角色名会自动识别，也可以手动填写</p>
       </div>
 
-      <div style={{ background: '#2a2a2a', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
-        <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: '#a0d2f0' }}>📂 上传文件</h3>
+      <div style={{ background: colors.cardBg, borderRadius: '12px', padding: '16px', marginBottom: '16px', border: `1px solid ${colors.border}` }}>
+        <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: colors.accent }}>📂 上传文件</h3>
         <input type="file" accept=".json" ref={fileInputRef} onChange={handleFileUpload} style={{ display: 'none' }} />
-        <button onClick={() => fileInputRef.current?.click()} style={{ background: '#4a90d9', color: '#fff', border: 'none', padding: '12px 20px', borderRadius: '8px', fontSize: '1em', cursor: 'pointer' }}>选择JSON文件并开始导入</button>
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          style={{
+            background: colors.accent,
+            color: '#fff',
+            border: 'none',
+            padding: '12px 20px',
+            borderRadius: '8px',
+            fontSize: '1em',
+            cursor: 'pointer',
+            fontWeight: 'bold',
+          }}
+        >
+          选择JSON文件并开始导入
+        </button>
       </div>
 
       {status && (
-        <div style={{ background: status.startsWith('✅') ? '#2a352a' : '#2a2a2a', borderRadius: '12px', padding: '16px', color: status.startsWith('✅') ? '#90c890' : status.startsWith('错误') ? '#d9a0a0' : '#e0e0e0', fontSize: '0.9em', marginBottom: '16px' }}>{status}</div>
+        <div style={{
+          background: status.startsWith('✅') ? (theme.isDarkMode ? '#2a352a' : '#e6fffa') : (theme.isDarkMode ? '#2a2a2a' : '#fff5f5'),
+          borderRadius: '12px', padding: '16px',
+          color: status.startsWith('✅') ? colors.success : colors.error,
+          fontSize: '0.9em', marginBottom: '16px', border: `1px solid ${colors.border}`
+        }}>
+          {status}
+        </div>
       )}
 
       {/* 跨书记忆管理器 */}
       <div id="memory-manager" style={{
-        background: '#2a2a2a', borderRadius: '12px', padding: '14px',
+        background: colors.cardBg,
+        borderRadius: '12px', padding: '14px',
         fontSize: '11px', fontFamily: '-apple-system, sans-serif',
-        marginTop: '8px'
+        marginTop: '8px',
+        border: `1px solid ${colors.border}`
       }}>
         <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'8px'}}>
-          <strong style={{color:'#a0d2f0', fontSize:'1em'}}>🧠 跨书记忆管理</strong>
-          <button id="memory-refresh-btn" style={{background:'#333', color:'#ccc', border:'none', borderRadius:'6px', padding:'4px 8px', fontSize:'10px', cursor:'pointer'}}>刷新</button>
+          <strong style={{color: colors.accent, fontSize:'1em'}}>🧠 跨书记忆管理</strong>
+          <button id="memory-refresh-btn" style={{
+            background: colors.neutral, color: '#fff', border:'none',
+            borderRadius:'6px', padding:'4px 8px', fontSize:'10px', cursor:'pointer'
+          }}>刷新</button>
         </div>
-        <div id="memory-list" style={{maxHeight:'400px', overflowY:'auto', WebkitOverflowScrolling:'touch', touchAction:'pan-y', marginBottom:'8px', border:'1px solid #333', borderRadius:'6px', padding:'4px'}}>加载中...</div>
+        <div id="memory-list" style={{
+          maxHeight:'400px', overflowY:'auto',
+          WebkitOverflowScrolling:'touch', touchAction:'pan-y',
+          marginBottom:'8px', border:`1px solid ${colors.border}`,
+          borderRadius:'6px', padding:'4px'
+        }}>加载中...</div>
         <div style={{display:'flex', gap:'8px'}}>
-          <button id="memory-delete-selected-btn" style={{background:'#d94a4a', color:'#fff', border:'none', borderRadius:'6px', padding:'4px 8px', fontSize:'10px', cursor:'pointer'}}>删除选中</button>
-          <button id="memory-clear-all-btn" style={{background:'#555', color:'#fff', border:'none', borderRadius:'6px', padding:'4px 8px', fontSize:'10px', cursor:'pointer'}}>清空全部</button>
+          <button id="memory-delete-selected-btn" style={{
+            background: colors.danger, color: '#fff', border:'none',
+            borderRadius:'6px', padding:'4px 8px', fontSize:'10px', cursor:'pointer'
+          }}>删除选中</button>
+          <button id="memory-clear-all-btn" style={{
+            background: colors.neutral, color: '#fff', border:'none',
+            borderRadius:'6px', padding:'4px 8px', fontSize:'10px', cursor:'pointer'
+          }}>清空全部</button>
         </div>
-        <div id="memory-status" style={{marginTop:'6px', fontSize:'10px', color:'#888'}}></div>
+        <div id="memory-status" style={{marginTop:'6px', fontSize:'10px', color: colors.subText}}></div>
       </div>
     </div>
   );
 }
-
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px', margin: '6px 0', background: '#333',
-  border: '1px solid #555', borderRadius: '8px', color: '#e0e0e0',
-  fontSize: '0.9em', boxSizing: 'border-box',
-};
