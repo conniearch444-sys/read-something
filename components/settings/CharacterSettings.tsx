@@ -275,41 +275,42 @@ ${chunks[i]}
   }, [theme.isDarkMode]);
 
   return (
-    <div style={{ padding: '0', margin: '24px 0 0 0', fontFamily: '-apple-system, sans-serif', color: colors.text, background: 'transparent' }}>
-      {/* 折叠按钮 */}
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className={theme.cardClass}
-        style={{
-          width: '100%', padding: '14px 16px',
-          border: `2px dashed ${theme.isDarkMode ? '#4a5568' : '#cbd5e0'}`,
-          borderRadius: '16px',
-          textAlign: 'center',
-          cursor: 'pointer',
-          color: colors.subText,
-          fontSize: '14px',
-          fontWeight: 500,
-          background: 'transparent',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '8px',
-          transition: 'border-color 0.2s',
-          boxSizing: 'border-box',
-        }}
-        onMouseEnter={(e) => {
-          (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgb(var(--theme-400) / 1)';
-          (e.currentTarget as HTMLButtonElement).style.color = 'rgb(var(--theme-400) / 1)';
-        }}
-        onMouseLeave={(e) => {
-          (e.currentTarget as HTMLButtonElement).style.borderColor = theme.isDarkMode ? '#4a5568' : '#cbd5e0';
-          (e.currentTarget as HTMLButtonElement).style.color = colors.subText;
-        }}
-      >
-        <span style={{ fontSize: '18px' }}>{isExpanded ? '📖' : '📱'}</span>
-        <span>跨APP记忆导入与管理</span>
-        <span style={{ fontSize: '12px', marginLeft: '4px' }}>{isExpanded ? '▲' : '▼'}</span>
-      </button>
+    <div style={{ padding: '0', margin: '32px 0 0 0', fontFamily: '-apple-system, sans-serif', color: colors.text, background: 'transparent' }}>
+      {/* 折叠按钮 — 包在卡片里，和角色卡视觉隔离 */}
+      <div className={theme.cardClass} style={{ borderRadius: '16px', padding: '4px' }}>
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          style={{
+            width: '100%', padding: '14px 16px',
+            border: `2px dashed ${theme.isDarkMode ? '#4a5568' : '#cbd5e0'}`,
+            borderRadius: '14px',
+            textAlign: 'center',
+            cursor: 'pointer',
+            color: colors.subText,
+            fontSize: '14px',
+            fontWeight: 500,
+            background: 'transparent',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            transition: 'border-color 0.2s',
+            boxSizing: 'border-box',
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgb(var(--theme-400) / 1)';
+            (e.currentTarget as HTMLButtonElement).style.color = 'rgb(var(--theme-400) / 1)';
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.borderColor = theme.isDarkMode ? '#4a5568' : '#cbd5e0';
+            (e.currentTarget as HTMLButtonElement).style.color = colors.subText;
+          }}
+        >
+          <span style={{ fontSize: '18px' }}>{isExpanded ? '📖' : '📱'}</span>
+          <span>跨APP记忆导入与管理</span>
+          <span style={{ fontSize: '12px', marginLeft: '4px' }}>{isExpanded ? '▲' : '▼'}</span>
+        </button>
+      </div>
 
       {/* 可折叠内容 */}
       {isExpanded && (
@@ -408,4 +409,4 @@ ${chunks[i]}
       )}
     </div>
   );
-  }
+}
