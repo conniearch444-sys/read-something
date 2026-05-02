@@ -277,7 +277,7 @@ ${chunks[i]}
   }, [theme.isDarkMode]);
 
   return (
-    <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto', fontFamily: '-apple-system, sans-serif', color: colors.text, background: 'transparent' }}>
+    <div style={{ padding: '20px', margin: '0', fontFamily: '-apple-system, sans-serif', color: colors.text, background: 'transparent' }}>
       <h2 style={{ color: colors.accent, fontSize: '1.2em', marginBottom: '16px' }}>📱 → 📖 跨APP记忆导入</h2>
       <p style={{ fontSize: '0.9em', color: colors.subText, marginBottom: '20px' }}>把小手机（EVE/兔K机等）导出的聊天记录JSON文件上传，自动分段总结，每段独立存储为一条记忆卡片。</p>
 
