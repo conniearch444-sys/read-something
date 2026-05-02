@@ -25,6 +25,8 @@ export default function ImportMemory({ theme }: { theme: ThemeClasses }) {
     success: theme.isDarkMode ? '#90c890' : '#276749',
     error: theme.isDarkMode ? '#d9a0a0' : '#c53030',
     listBg: theme.isDarkMode ? '#0d1117' : '#f7f8fa',
+    editSave: '#4caf50',
+    editCancel: '#9e9e9e',
   };
 
   const getApiConfig = (): ApiConfig | null => {
@@ -180,7 +182,7 @@ ${chunks[i]}
     }
   };
 
-  // 记忆管理器交互逻辑 — 注意依赖项包含 isExpanded，折叠展开时会重新加载
+  // 记忆管理器交互逻辑（包含编辑、删除、查看）
   useEffect(() => {
     const KEY = 'cross_book_memories_v1';
     const listEl = document.getElementById('memory-list');
@@ -190,6 +192,32 @@ ${chunks[i]}
     const clearAllBtn = document.getElementById('memory-clear-all-btn');
     if (!listEl || !statusEl || !refreshBtn || !deleteSelectedBtn || !clearAllBtn) return;
 
+    let editingIndex: number | null = null;
+
+    const saveEdit = (index: number) => {
+      const textarea = document.getElementById('edit-textarea-' + index) as HTMLTextAreaElement;
+      if (!textarea) return;
+      const newContent = textarea.value.trim();
+      if (!newContent) { alert('内容不能为空'); return; }
+
+      try {
+        const raw = localStorage.getItem(KEY);
+        const memories = raw ? JSON.parse(raw) : [];
+        if (index >= 0 && index < memories.length) {
+          memories[index].summary = newContent;
+          memories[index].updatedAt = Date.now();
+          localStorage.setItem(KEY, JSON.stringify(memories));
+          editingIndex = null;
+          refresh();
+        }
+      } catch {}
+    };
+
+    const cancelEdit = () => {
+      editingIndex = null;
+      refresh();
+    };
+
     const load = () => {
       let memories = [];
       try { memories = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch {}
@@ -197,38 +225,104 @@ ${chunks[i]}
         listEl.innerHTML = `<div style="color:${colors.subText}; padding:8px; font-size:13px;">暂无记忆</div>`;
         return memories;
       }
-      listEl.innerHTML = memories.map((m, i) => `
-        <div style="padding:6px 0; border-bottom:1px solid ${colors.border}; font-size:13px; color:${colors.text};">
-          <div style="display:flex; align-items:flex-start; gap:8px; cursor:pointer;" data-memory-index="${i}">
-            <input type="checkbox" id="mm_${i}" style="margin-top:3px; flex-shrink:0;" onclick="event.stopPropagation();" />
-            <div style="flex:1; min-width:0;">
-              <div style="font-weight:bold; font-size:13px;">${m.characterName || '未知'} · ${new Date(m.updatedAt).toLocaleString('zh-CN')}</div>
-              <div id="memory-content-${i}" class="memory-text" style="color:${colors.subText}; word-break:break-all; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; font-size:13px;">
-                ${m.summary || '(空)'}
+
+      listEl.innerHTML = memories.map((m, i) => {
+        const isEditing = editingIndex === i;
+
+        if (isEditing) {
+          // 编辑模式
+          return `
+            <div style="padding:6px 0; border-bottom:1px solid ${colors.border}; font-size:13px; color:${colors.text};">
+              <div style="font-weight:bold; font-size:13px; margin-bottom:4px;">${m.characterName || '未知'} · ${new Date(m.updatedAt).toLocaleString('zh-CN')}</div>
+              <textarea id="edit-textarea-${i}" style="
+                width:100%; min-height:80px; padding:8px;
+                background:${colors.inputBg}; color:${colors.text};
+                border:1px solid ${colors.accent}; border-radius:8px;
+                font-size:13px; font-family:-apple-system, sans-serif;
+                box-sizing:border-box; resize:vertical;
+              ">${m.summary || ''}</textarea>
+              <div style="display:flex; gap:6px; margin-top:6px;">
+                <button id="edit-save-${i}" style="
+                  background:${colors.editSave}; color:#fff; border:none;
+                  border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;
+                ">💾 保存</button>
+                <button id="edit-cancel-${i}" style="
+                  background:${colors.editCancel}; color:#fff; border:none;
+                  border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer;
+                ">取消</button>
               </div>
-              <div id="memory-content-full-${i}" class="memory-text-full" style="color:${colors.subText}; word-break:break-all; display:none; max-height:200px; overflow-y:auto; WebkitOverflowScrolling:touch; margin-top:4px; font-size:13px;">
-                ${m.summary || '(空)'}
+            </div>
+          `;
+        }
+
+        // 正常显示模式
+        return `
+          <div style="padding:6px 0; border-bottom:1px solid ${colors.border}; font-size:13px; color:${colors.text};">
+            <div style="display:flex; align-items:flex-start; gap:8px; cursor:pointer;" data-memory-index="${i}">
+              <input type="checkbox" id="mm_${i}" style="margin-top:3px; flex-shrink:0;" onclick="event.stopPropagation();" />
+              <div style="flex:1; min-width:0;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span style="font-weight:bold; font-size:13px;">${m.characterName || '未知'} · ${new Date(m.updatedAt).toLocaleString('zh-CN')}</span>
+                  <button id="edit-btn-${i}" style="
+                    background:transparent; color:${colors.subText}; border:none;
+                    cursor:pointer; font-size:13px; padding:2px 6px; flex-shrink:0;
+                  " title="编辑">✏️</button>
+                </div>
+                <div id="memory-content-${i}" class="memory-text" style="color:${colors.subText}; word-break:break-all; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; font-size:13px;">
+                  ${m.summary || '(空)'}
+                </div>
+                <div id="memory-content-full-${i}" class="memory-text-full" style="color:${colors.subText}; word-break:break-all; display:none; max-height:200px; overflow-y:auto; WebkitOverflowScrolling:touch; margin-top:4px; font-size:13px;">
+                  ${m.summary || '(空)'}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      `).join('');
+        `;
+      }).join('');
 
       // 绑定展开/收起事件
-      listEl.querySelectorAll('[data-memory-index]').forEach((el) => {
-        el.addEventListener('click', () => {
-          const index = parseInt(el.getAttribute('data-memory-index') || '0', 10);
-          const shortEl = document.getElementById('memory-content-' + index);
-          const fullEl = document.getElementById('memory-content-full-' + index);
-          if (!shortEl || !fullEl) return;
-          if (fullEl.style.display === 'none') {
-            shortEl.style.display = 'none';
-            fullEl.style.display = 'block';
-          } else {
-            shortEl.style.display = '-webkit-box';
-            fullEl.style.display = 'none';
-          }
+      if (!editingIndex && editingIndex !== 0) {
+        listEl.querySelectorAll('[data-memory-index]').forEach((el) => {
+          el.addEventListener('click', () => {
+            const index = parseInt(el.getAttribute('data-memory-index') || '0', 10);
+            const shortEl = document.getElementById('memory-content-' + index);
+            const fullEl = document.getElementById('memory-content-full-' + index);
+            if (!shortEl || !fullEl) return;
+            if (fullEl.style.display === 'none') {
+              shortEl.style.display = 'none';
+              fullEl.style.display = 'block';
+            } else {
+              shortEl.style.display = '-webkit-box';
+              fullEl.style.display = 'none';
+            }
+          });
         });
+      }
+
+      // 绑定编辑按钮
+      memories.forEach((_, i) => {
+        const editBtn = document.getElementById('edit-btn-' + i);
+        if (editBtn) {
+          editBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            editingIndex = i;
+            load();
+          });
+        }
+        const saveBtn = document.getElementById('edit-save-' + i);
+        if (saveBtn) {
+          saveBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            saveEdit(i);
+          });
+        }
+        const cancelBtn = document.getElementById('edit-cancel-' + i);
+        if (cancelBtn) {
+          cancelBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            cancelEdit();
+          });
+        }
       });
 
       return memories;
@@ -237,6 +331,7 @@ ${chunks[i]}
     let currentMemories = load();
 
     const refresh = () => {
+      editingIndex = null;
       currentMemories = load();
       statusEl.textContent = '';
     };
@@ -276,7 +371,7 @@ ${chunks[i]}
 
   return (
     <div style={{ padding: '0', margin: '32px 0 0 0', fontFamily: '-apple-system, sans-serif', color: colors.text, background: 'transparent' }}>
-      {/* 折叠按钮 — 包在卡片里，和角色卡视觉隔离 */}
+      {/* 折叠按钮 */}
       <div className={theme.cardClass} style={{ borderRadius: '16px', padding: '4px' }}>
         <button
           onClick={() => setIsExpanded(!isExpanded)}
@@ -409,4 +504,4 @@ ${chunks[i]}
       )}
     </div>
   );
-              }
+          }
