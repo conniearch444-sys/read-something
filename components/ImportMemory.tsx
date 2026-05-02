@@ -39,7 +39,7 @@ export default function ImportMemory() {
   const generateSummaries = async (messages: Message[]): Promise<string[]> => {
     const apiConfig = getApiConfig();
     if (!apiConfig || !apiConfig.apiKey) {
-      throw new Error('未找到 API 配置，请先在“设置”中保存 API Key。');
+      throw new Error('未找到 API 配置，请先在"设置"中保存 API Key。');
     }
 
     const endpoint = apiConfig.endpoint.replace(/\/+$/, '');
@@ -102,7 +102,7 @@ ${chunks[i]}
           body: JSON.stringify({
             model,
             messages: [{ role: 'user', content: prompt }],
-            max_tokens: 2000,
+            max_tokens: 3000,
             temperature: 0.7,
           }),
         });
