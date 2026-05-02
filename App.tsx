@@ -2392,16 +2392,7 @@ useEffect(() => {
 
       {/* Main Content Area */}
       <div className={`flex-1 flex flex-col overflow-hidden relative ${viewAnimationClass}`}>
-        <div id="memory-manager" style={{
-  position:'fixed', bottom:0, left:0, right:0, zIndex:9999,
-  background:'#111', color:'#ddd', fontSize:'11px',
-  maxHeight:'240px', overflow:'auto', padding:'10px',
-  fontFamily:'-apple-system, sans-serif', borderTop:'1px solid #333'
-}}>
-  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'6px'}}>
-    <strong style={{color:'#a0d2f0'}}>🧠 跨书记忆管理</strong>
-    <button id="memory-refresh-btn" style={{background:'#333', color:'#ccc', border:'none', borderRadius:'4px', padding:'4px 8px', fontSize:'10px', cursor:'pointer'}}>刷新</button>
-  </div>
+        
   <div id="memory-list" style={{maxHeight:'160px', overflow:'auto'}}>加载中...</div>
   <div style={{display:'flex', gap:'8px', marginTop:'6px'}}>
     <button id="memory-delete-selected-btn" style={{background:'#d94a4a', color:'#fff', border:'none', borderRadius:'4px', padding:'4px 8px', fontSize:'10px', cursor:'pointer'}}>删除选中</button>
@@ -2468,6 +2459,16 @@ useEffect(() => {
           />
         </div>
         {currentView === AppView.SETTINGS && (
+      <div id="memory-manager" style={{
+  position:'relative', bottom:0, left:0, right:0, 
+  background:'#111', color:'#ddd', fontSize:'11px',
+  maxHeight:'240px', overflow:'auto', padding:'10px',
+  fontFamily:'-apple-system, sans-serif', borderTop:'1px solid #333'
+}}>
+  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'6px'}}>
+    <strong style={{color:'#a0d2f0'}}>🧠 跨书记忆管理</strong>
+    <button id="memory-refresh-btn" style={{background:'#333', color:'#ccc', border:'none', borderRadius:'4px', padding:'4px 8px', fontSize:'10px', cursor:'pointer'}}>刷新</button>
+  </div>
           <Settings
             isDarkMode={isDarkMode}
             onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}
