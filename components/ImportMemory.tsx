@@ -90,7 +90,7 @@ ${conversationText}
       body: JSON.stringify({
         model: apiConfig.model || 'claude-sonnet-4-6',
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 500,
+        max_tokens: 5000,
         temperature: 0.7,
       }),
     });
