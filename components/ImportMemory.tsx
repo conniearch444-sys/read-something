@@ -12,35 +12,21 @@ export default function ImportMemory() {
   const [characterName, setCharacterName] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 从项目中读取缓存的 API 配置
+  // 读取主 API 配置
   const getApiConfig = (): ApiConfig | null => {
     try {
-      // 1. 尝试读取主 API 配置（键名 'app_api_config'）
-      const mainConfig = localStorage.getItem('app_api_config');
-      if (mainConfig) {
-        const parsed = JSON.parse(mainConfig);
+      const raw = localStorage.getItem('app_api_config');
+      if (raw) {
+        const parsed = JSON.parse(raw);
         if (parsed.apiKey && parsed.endpoint) {
           return parsed as ApiConfig;
         }
       }
-
-      // 2. 如果主配置不存在或不完整，尝试读取设置里的总结专用 API
-      const settings = localStorage.getItem('app_settings');
-      if (settings) {
-        const parsedSettings = JSON.parse(settings);
-        const summaryApi = parsedSettings?.readerMore?.feature?.summaryApi;
-        if (summaryApi?.apiKey && summaryApi?.endpoint) {
-          return summaryApi as ApiConfig;
-        }
-      }
-    } catch (e) {
-      console.error('读取 API 配置失败', e);
-    }
-
+    } catch {}
     return null;
   };
 
-  // 提取对话
+  // 从JSON里提取对话
   const extractMessages = (jsonData: any): Message[] => {
     const messages = jsonData?.messages || jsonData?.chat_log || jsonData?.conversation || [];
     return messages
@@ -52,7 +38,7 @@ export default function ImportMemory() {
       }));
   };
 
-  // 调用 AI 生成摘要
+  // 调用 AI 生成摘要（自动分段总结 + 合并）
   const generateSummary = async (messages: Message[]): Promise<string> => {
     const apiConfig = getApiConfig();
     if (!apiConfig || !apiConfig.apiKey) {
@@ -60,45 +46,102 @@ export default function ImportMemory() {
     }
 
     const endpoint = apiConfig.endpoint.replace(/\/+$/, '');
-    const conversationText = messages
-      .slice(-200)
-      .map(msg => `${msg.sender === 'user' ? '用户' : 'AI'}：${msg.text}`)
-      .join('\n');
+    const model = apiConfig.model || 'claude-sonnet-4-6';
 
-    const prompt = `以下是一段用户与AI角色（${characterName || '未知角色'}）的对话记录。请仔细阅读后，写一段不超过2000字的记忆总结。
+    // 每段 150 条，防止漏掉前半部分
+    const chunkSize = 150;
+    const chunks: string[] = [];
+    for (let i = 0; i < messages.length; i += chunkSize) {
+      const slice = messages.slice(i, i + chunkSize);
+      chunks.push(
+        slice
+          .map(msg => `${msg.sender === 'user' ? '用户' : 'AI'}：${msg.text}`)
+          .join('\n')
+      );
+    }
 
-**必须包含以下内容（不要只写笼统的性格评价）：**
-1. 这次对话中你们聊了哪些具体的话题（如工作、生活、情感、近期发生的事等）。
-2. 用户分享了什么个人信息（如正在哪里、做什么、心情如何、有什么计划等）。
-3. 角色在对话中展现出了什么具体的情感反应（如关心、调侃、担忧、温柔提醒等）。
-4. 有没有值得记住的细节（如用户提到了特定地点、时间、人物、事件等）。
+    // 只有一段时直接总结
+    if (chunks.length === 1) {
+      const prompt = `以下是一段用户与AI角色（${characterName || '未知角色'}）的对话记录。请写一段不超过500字的记忆总结。
 
-**示例格式（请参考）：**
-"用户和温时序聊了最近的工作安排，用户提到自己正在出差/在某个城市，温时序用温柔但略带责备的语气提醒用户注意休息。两人还聊到了XX话题，用户分享了XX心情，温时序回应了XX。"
+**必须包含：具体话题、用户分享的个人信息（地点/心情/计划等）、角色的具体情感反应、值得记住的细节。**
 
 对话记录：
-${conversationText}
+${chunks[0]}
 
-请输出总结（2000字以内）：`;
+请输出总结：`;
 
-    const response = await fetch(`${endpoint}/chat/completions`, {
+      const response = await fetch(`${endpoint}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiConfig.apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 1500,
+          temperature: 0.7,
+        }),
+      });
+      const data = await response.json();
+      return (data?.choices?.[0]?.message?.content || '').trim();
+    }
+
+    // 多段：先各自总结
+    const partSummaries: string[] = [];
+    for (let i = 0; i < chunks.length; i++) {
+      const prompt = `以下是一段用户与AI角色（${characterName || '未知角色'}）的对话记录（第${i + 1}部分，共${chunks.length}部分）。请写一段不超过300字的要点总结，包含具体话题和关键细节。
+
+对话记录：
+${chunks[i]}
+
+请输出要点总结：`;
+
+      const response = await fetch(`${endpoint}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiConfig.apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 800,
+          temperature: 0.7,
+        }),
+      });
+      const data = await response.json();
+      const partText = (data?.choices?.[0]?.message?.content || '').trim();
+      if (partText) partSummaries.push(`第${i + 1}部分：${partText}`);
+    }
+
+    // 合并所有分段总结
+    const mergePrompt = `以下是对同一段对话的分段总结，请把各段总结合并成一段完整的记忆总结。必须包含所有部分的重要话题，不遗漏每一段的核心内容。不超过800字。
+
+分段总结：
+${partSummaries.join('\n\n')}
+
+请输出合并后的完整记忆总结：`;
+
+    const mergeResponse = await fetch(`${endpoint}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiConfig.apiKey}`,
       },
       body: JSON.stringify({
-        model: apiConfig.model || 'claude-sonnet-4-6',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 5000,
+        model,
+        messages: [{ role: 'user', content: mergePrompt }],
+        max_tokens: 2000,
         temperature: 0.7,
       }),
     });
-
-    const data = await response.json();
-    return (data?.choices?.[0]?.message?.content || '').trim();
+    const mergeData = await mergeResponse.json();
+    return (mergeData?.choices?.[0]?.message?.content || partSummaries.join('\n')).trim();
   };
 
+  // 文件上传
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
