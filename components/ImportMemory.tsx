@@ -180,7 +180,7 @@ ${chunks[i]}
     }
   };
 
-  // 记忆管理器交互逻辑
+  // 记忆管理器交互逻辑 — 注意依赖项包含 isExpanded，折叠展开时会重新加载
   useEffect(() => {
     const KEY = 'cross_book_memories_v1';
     const listEl = document.getElementById('memory-list');
@@ -194,19 +194,19 @@ ${chunks[i]}
       let memories = [];
       try { memories = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch {}
       if (!memories.length) {
-        listEl.innerHTML = `<div style="color:${colors.subText}; padding:8px; font-size:12px;">暂无记忆</div>`;
+        listEl.innerHTML = `<div style="color:${colors.subText}; padding:8px; font-size:13px;">暂无记忆</div>`;
         return memories;
       }
       listEl.innerHTML = memories.map((m, i) => `
-        <div style="padding:6px 0; border-bottom:1px solid ${colors.border}; font-size:12px; color:${colors.text};">
+        <div style="padding:6px 0; border-bottom:1px solid ${colors.border}; font-size:13px; color:${colors.text};">
           <div style="display:flex; align-items:flex-start; gap:8px; cursor:pointer;" data-memory-index="${i}">
             <input type="checkbox" id="mm_${i}" style="margin-top:3px; flex-shrink:0;" onclick="event.stopPropagation();" />
             <div style="flex:1; min-width:0;">
-              <div style="font-weight:bold; font-size:12px;">${m.characterName || '未知'} · ${new Date(m.updatedAt).toLocaleString('zh-CN')}</div>
-              <div id="memory-content-${i}" class="memory-text" style="color:${colors.subText}; word-break:break-all; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; font-size:12px;">
+              <div style="font-weight:bold; font-size:13px;">${m.characterName || '未知'} · ${new Date(m.updatedAt).toLocaleString('zh-CN')}</div>
+              <div id="memory-content-${i}" class="memory-text" style="color:${colors.subText}; word-break:break-all; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; font-size:13px;">
                 ${m.summary || '(空)'}
               </div>
-              <div id="memory-content-full-${i}" class="memory-text-full" style="color:${colors.subText}; word-break:break-all; display:none; max-height:200px; overflow-y:auto; WebkitOverflowScrolling:touch; margin-top:4px; font-size:12px;">
+              <div id="memory-content-full-${i}" class="memory-text-full" style="color:${colors.subText}; word-break:break-all; display:none; max-height:200px; overflow-y:auto; WebkitOverflowScrolling:touch; margin-top:4px; font-size:13px;">
                 ${m.summary || '(空)'}
               </div>
             </div>
@@ -272,44 +272,45 @@ ${chunks[i]}
     return () => {
       refreshBtn.removeEventListener('click', refresh);
     };
-  }, [theme.isDarkMode]);
+  }, [theme.isDarkMode, isExpanded]);
 
   return (
-    <div style={{ padding: '0', margin: '24px 0 0 0', fontFamily: '-apple-system, sans-serif', color: colors.text, background: 'transparent' }}>
-      {/* 折叠按钮 */}
-      <button
-        onClick={() => setIsExpanded(!isExpanded)}
-        className={theme.cardClass}
-        style={{
-          width: '100%', padding: '14px 16px',
-          border: `2px dashed ${theme.isDarkMode ? '#4a5568' : '#cbd5e0'}`,
-          borderRadius: '16px',
-          textAlign: 'center',
-          cursor: 'pointer',
-          color: colors.subText,
-          fontSize: '14px',
-          fontWeight: 500,
-          background: 'transparent',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '8px',
-          transition: 'border-color 0.2s',
-          boxSizing: 'border-box',
-        }}
-        onMouseEnter={(e) => {
-          (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgb(var(--theme-400) / 1)';
-          (e.currentTarget as HTMLButtonElement).style.color = 'rgb(var(--theme-400) / 1)';
-        }}
-        onMouseLeave={(e) => {
-          (e.currentTarget as HTMLButtonElement).style.borderColor = theme.isDarkMode ? '#4a5568' : '#cbd5e0';
-          (e.currentTarget as HTMLButtonElement).style.color = colors.subText;
-        }}
-      >
-        <span style={{ fontSize: '18px' }}>{isExpanded ? '📖' : '📱'}</span>
-        <span>跨APP记忆导入与管理</span>
-        <span style={{ fontSize: '12px', marginLeft: '4px' }}>{isExpanded ? '▲' : '▼'}</span>
-      </button>
+    <div style={{ padding: '0', margin: '32px 0 0 0', fontFamily: '-apple-system, sans-serif', color: colors.text, background: 'transparent' }}>
+      {/* 折叠按钮 — 包在卡片里，和角色卡视觉隔离 */}
+      <div className={theme.cardClass} style={{ borderRadius: '16px', padding: '4px' }}>
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          style={{
+            width: '100%', padding: '14px 16px',
+            border: `2px dashed ${theme.isDarkMode ? '#4a5568' : '#cbd5e0'}`,
+            borderRadius: '14px',
+            textAlign: 'center',
+            cursor: 'pointer',
+            color: colors.subText,
+            fontSize: '14px',
+            fontWeight: 500,
+            background: 'transparent',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            transition: 'border-color 0.2s',
+            boxSizing: 'border-box',
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgb(var(--theme-400) / 1)';
+            (e.currentTarget as HTMLButtonElement).style.color = 'rgb(var(--theme-400) / 1)';
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.borderColor = theme.isDarkMode ? '#4a5568' : '#cbd5e0';
+            (e.currentTarget as HTMLButtonElement).style.color = colors.subText;
+          }}
+        >
+          <span style={{ fontSize: '18px' }}>{isExpanded ? '📖' : '📱'}</span>
+          <span>跨APP记忆导入与管理</span>
+          <span style={{ fontSize: '12px', marginLeft: '4px' }}>{isExpanded ? '▲' : '▼'}</span>
+        </button>
+      </div>
 
       {/* 可折叠内容 */}
       {isExpanded && (
@@ -375,13 +376,13 @@ ${chunks[i]}
           {/* 跨书记忆管理器 */}
           <div id="memory-manager" className={theme.cardClass} style={{
             borderRadius: '12px', padding: '14px',
-            fontSize: '12px', fontFamily: '-apple-system, sans-serif',
+            fontSize: '13px', fontFamily: '-apple-system, sans-serif',
           }}>
             <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'8px'}}>
               <strong style={{color: colors.accent, fontSize:'1em'}}>🧠 跨书记忆管理</strong>
               <button id="memory-refresh-btn" className={theme.btnClass} style={{
                 background: colors.neutral, color: '#fff', border:'none',
-                borderRadius:'6px', padding:'4px 8px', fontSize:'12px', cursor:'pointer'
+                borderRadius:'6px', padding:'4px 8px', fontSize:'13px', cursor:'pointer'
               }}>刷新</button>
             </div>
             <div id="memory-list" style={{
@@ -390,22 +391,22 @@ ${chunks[i]}
               marginBottom:'8px', border:`1px solid ${colors.border}`,
               borderRadius:'6px', padding:'4px',
               background: colors.listBg,
-              fontSize: '12px'
+              fontSize: '13px'
             }}>加载中...</div>
             <div style={{display:'flex', gap:'8px'}}>
               <button id="memory-delete-selected-btn" className={theme.btnClass} style={{
                 background: colors.danger, color: '#fff', border:'none',
-                borderRadius:'6px', padding:'4px 8px', fontSize:'12px', cursor:'pointer'
+                borderRadius:'6px', padding:'4px 8px', fontSize:'13px', cursor:'pointer'
               }}>删除选中</button>
               <button id="memory-clear-all-btn" className={theme.btnClass} style={{
                 background: colors.neutral, color: '#fff', border:'none',
-                borderRadius:'6px', padding:'4px 8px', fontSize:'12px', cursor:'pointer'
+                borderRadius:'6px', padding:'4px 8px', fontSize:'13px', cursor:'pointer'
               }}>清空全部</button>
             </div>
-            <div id="memory-status" style={{marginTop:'6px', fontSize:'12px', color: colors.subText}}></div>
+            <div id="memory-status" style={{marginTop:'6px', fontSize:'13px', color: colors.subText}}></div>
           </div>
         </div>
       )}
     </div>
   );
-}
+              }
