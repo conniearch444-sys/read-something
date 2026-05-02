@@ -9,9 +9,23 @@ interface Message {
 export default function ImportMemory() {
   const [status, setStatus] = useState<string>('');
   const [characterName, setCharacterName] = useState<string>('');
-  const [apiEndpoint, setApiEndpoint] = useState<string>('');
-  const [apiKey, setApiKey] = useState<string>('');
-  const [modelName, setModelName] = useState<string>('claude-sonnet-4-6');
+
+  // 自动读取读点书已配置的 API 设置
+  const getApiConfig = () => {
+    try {
+      const stored = localStorage.getItem('app_api_config_v1');
+      if (stored) {
+        const config = JSON.parse(stored);
+        return {
+          endpoint: config.endpoint || '',
+          apiKey: config.apiKey || '',
+          model: config.model || '',
+        };
+      }
+    } catch {}
+    return { endpoint: '', apiKey: '', model: '' };
+  };
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 从JSON里提取对话
@@ -28,8 +42,14 @@ export default function ImportMemory() {
 
   // 调用AI生成摘要
   const generateSummary = async (messages: Message[]): Promise<string> => {
+    const { endpoint, apiKey, model } = getApiConfig();
+    
+    if (!endpoint || !apiKey) {
+      throw new Error('请先在 API 设置中配置 API 地址和 Key');
+    }
+
     const conversationText = messages
-      .slice(-200) // 最多取最近200条，防止太长
+      .slice(-200)
       .map(msg => `${msg.sender === 'user' ? '用户' : 'AI'}：${msg.text}`)
       .join('\n');
 
@@ -40,14 +60,14 @@ ${conversationText}
 
 请输出总结（不超过300字）：`;
 
-    const response = await fetch(`${apiEndpoint.replace(/\/+$/, '')}/chat/completions`, {
+    const response = await fetch(`${endpoint.replace(/\/+$/, '')}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: modelName,
+        model: model || 'claude-sonnet-4-6',
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 500,
         temperature: 0.7,
@@ -153,7 +173,7 @@ ${conversationText}
         自动生成摘要并存入对应角色的跨场景记忆库。
       </p>
 
-      {/* API 配置 */}
+      {/* 角色名 */}
       <div style={{
         background: '#2a2a2a',
         borderRadius: '12px',
@@ -161,30 +181,80 @@ ${conversationText}
         marginBottom: '16px',
       }}>
         <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: '#a0d2f0' }}>
-          ⚙️ API 配置
+          👤 角色名
         </h3>
         <input
           type="text"
-          placeholder="API地址 (如 https://api.xxx.com)"
-          value={apiEndpoint}
-          onChange={(e) => setApiEndpoint(e.target.value)}
+          placeholder="留空则自动识别 (如温时序)"
+          value={characterName}
+          onChange={(e) => setCharacterName(e.target.value)}
           style={inputStyle}
         />
-        <input
-          type="password"
-          placeholder="API Key"
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-          style={inputStyle}
-        />
-        <input
-          type="text"
-          placeholder="模型名称 (如 claude-sonnet-4-6)"
-          value={modelName}
-          onChange={(e) => setModelName(e.target.value)}
-          style={inputStyle}
-        />
+        <p style={{ fontSize: '0.8em', color: '#888', margin: '8px 0 0 0' }}>
+          如果JSON里有角色名会自动识别，也可以手动填写
+        </p>
       </div>
+
+      {/* 上传按钮 */}
+      <div style={{
+        background: '#2a2a2a',
+        borderRadius: '12px',
+        padding: '16px',
+        marginBottom: '16px',
+      }}>
+        <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: '#a0d2f0' }}>
+          📂 上传文件
+        </h3>
+        <input
+          type="file"
+          accept=".json"
+          ref={fileInputRef}
+          onChange={handleFileUpload}
+          style={{ display: 'none' }}
+        />
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          style={{
+            background: '#4a90d9',
+            color: '#fff',
+            border: 'none',
+            padding: '12px 20px',
+            borderRadius: '8px',
+            fontSize: '1em',
+            cursor: 'pointer',
+          }}
+        >
+          选择JSON文件并开始导入
+        </button>
+      </div>
+
+      {/* 状态提示 */}
+      {status && (
+        <div style={{
+          background: status.startsWith('✅') ? '#2a352a' : '#2a2a2a',
+          borderRadius: '12px',
+          padding: '16px',
+          color: status.startsWith('✅') ? '#90c890' : status.startsWith('错误') ? '#d9a0a0' : '#e0e0e0',
+          fontSize: '0.9em',
+        }}>
+          {status}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  padding: '10px',
+  margin: '6px 0',
+  background: '#333',
+  border: '1px solid #555',
+  borderRadius: '8px',
+  color: '#e0e0e0',
+  fontSize: '0.9em',
+  boxSizing: 'border-box',
+};      </div>
 
       {/* 角色名 */}
       <div style={{
