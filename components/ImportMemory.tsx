@@ -10,7 +10,6 @@ interface Message {
 export default function ImportMemory() {
   const [status, setStatus] = useState<string>('');
   const [characterName, setCharacterName] = useState<string>('');
-  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const getApiConfig = (): ApiConfig | null => {
@@ -37,7 +36,7 @@ export default function ImportMemory() {
       }));
   };
 
-  const generateSummary = async (messages: Message[]): Promise<string> => {
+  const generateSummaries = async (messages: Message[]): Promise<string[]> => {
     const apiConfig = getApiConfig();
     if (!apiConfig || !apiConfig.apiKey) {
       throw new Error('未找到 API 配置，请先在“设置”中保存 API Key。');
@@ -64,49 +63,10 @@ export default function ImportMemory() {
       );
     }
 
-    if (chunks.length === 0) return '';
+    if (chunks.length === 0) return [];
 
-    if (chunks.length === 1) {
-      const prompt = `你是${characterName || '角色'}，正在回顾和用户的聊天。
+    const results: string[] = [];
 
-【任务】把下面这段聊天记录浓缩成一段回忆。
-
-【格式要求】
-- 开头固定写：[YYYY/MM/DD HH:mm - YYYY/MM/DD HH:mm]（使用对话记录前面的时间段标注）
-- 紧接一段中文总结（200-400字），用「我」指代自己，用「用户」指代对方
-- 写成一段连贯的话，不要用列表、编号或分点
-- 只写聊天里真实出现过的内容，禁止编造事实妄加揣测
-- 回答必须完整地结束，禁止写一半就停下
-
-【内容要求】
-- 按时间顺序描述对话推进过程
-- 记录用户分享的具体个人信息（地点、心情、计划、状态变化），并用引号标注用户原话
-- 记录你自己的回应方式和情感反应
-- 捕捉这段对话中最独特的情感瞬间
-
-对话记录：
-${chunks[0]}
-
-你的回忆：`;
-
-      const response = await fetch(`${endpoint}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiConfig.apiKey}`,
-        },
-        body: JSON.stringify({
-          model,
-          messages: [{ role: 'user', content: prompt }],
-          max_tokens: 2500,
-          temperature: 0.7,
-        }),
-      });
-      const data = await response.json();
-      return (data?.choices?.[0]?.message?.content || '').trim();
-    }
-
-    const partSummaries: string[] = [];
     for (let i = 0; i < chunks.length; i++) {
       setStatus(`正在总结第 ${i + 1}/${chunks.length} 部分...`);
 
@@ -149,14 +109,14 @@ ${chunks[i]}
         const data = await response.json();
         const partText = (data?.choices?.[0]?.message?.content || '').trim();
         if (partText) {
-          partSummaries.push(partText);
+          results.push(partText);
         }
       } catch (e) {
         console.error(`分段总结失败: ${i + 1}`, e);
       }
     }
 
-    return partSummaries.join('\n\n');
+    return results;
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -178,20 +138,22 @@ ${chunks[i]}
         if (!detectedName) detectedName = '未知角色';
 
         try {
-          const summary = await generateSummary(messages);
-          if (!summary) { setStatus('错误：AI没有返回有效的摘要'); return; }
+          const summaries = await generateSummaries(messages);
+          if (summaries.length === 0) { setStatus('错误：AI没有返回有效的摘要'); return; }
           
           const existingMemories = JSON.parse(localStorage.getItem('cross_book_memories_v1') || '[]');
-          existingMemories.push({
-            characterName: detectedName,
-            summary: `[来自小手机的记忆] ${summary}`,
-            updatedAt: Date.now(),
+          summaries.forEach((summary) => {
+            existingMemories.push({
+              characterName: detectedName,
+              summary: `[来自小手机的记忆] ${summary}`,
+              updatedAt: Date.now(),
+            });
           });
           const forThisChar = existingMemories.filter((m: any) => m.characterName === detectedName).slice(-100);
           const forOthers = existingMemories.filter((m: any) => m.characterName !== detectedName);
           localStorage.setItem('cross_book_memories_v1', JSON.stringify([...forOthers, ...forThisChar]));
           
-          setStatus(`✅ 成功！已为「${detectedName}」存储记忆（共 ${summary.length} 字）。摘要预览：${summary.slice(0, 150)}...`);
+          setStatus(`✅ 成功！已为「${detectedName}」存储 ${summaries.length} 条记忆。`);
         } catch (apiError) {
           setStatus(`调用AI失败：${apiError instanceof Error ? apiError.message : '请检查API配置'}`);
         }
@@ -260,7 +222,6 @@ ${chunks[i]}
 
     const refresh = () => {
       currentMemories = load();
-      setExpandedIndex(null);
       statusEl.textContent = '';
     };
     refreshBtn.addEventListener('click', refresh);
@@ -300,7 +261,7 @@ ${chunks[i]}
   return (
     <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto', fontFamily: '-apple-system, sans-serif', color: '#e0e0e0' }}>
       <h2 style={{ color: '#fff', fontSize: '1.2em', marginBottom: '16px' }}>📱 → 📖 跨APP记忆导入</h2>
-      <p style={{ fontSize: '0.9em', color: '#aaa', marginBottom: '20px' }}>把小手机（EVE/兔K机等）导出的聊天记录JSON文件上传，智能分段生成回忆并存入对应角色的跨场景记忆库。</p>
+      <p style={{ fontSize: '0.9em', color: '#aaa', marginBottom: '20px' }}>把小手机（EVE/兔K机等）导出的聊天记录JSON文件上传，自动分段总结，每段独立存储为一条记忆卡片。</p>
 
       <div style={{ background: '#2a2a2a', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
         <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: '#a0d2f0' }}>⚙️ 状态</h3>
