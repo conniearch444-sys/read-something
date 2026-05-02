@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react';
-import { RefreshCw, Check, ChevronDown } from 'lucide-react';
 
 interface Message {
   sender: string;
@@ -7,20 +6,7 @@ interface Message {
   timestamp?: number;
 }
 
-const PROVIDERS_ENDPOINTS: Record<string, string> = {
-  'OPENAI': 'https://api.openai.com/v1',
-  'DEEPSEEK': 'https://api.deepseek.com',
-  'GEMINI': 'https://generativelanguage.googleapis.com/v1beta',
-  'CLAUDE': 'https://api.anthropic.com',
-  'CUSTOM': '',
-};
-
-const MODEL_CACHE_KEY = 'app_api_models_cache_v1';
-
-interface OptionItem {
-  value: string;
-  label: string;
-}
+const API_STORAGE_KEY = 'import_memory_api_config';
 
 export default function ImportMemory() {
   const [status, setStatus] = useState<string>('');
@@ -28,102 +14,31 @@ export default function ImportMemory() {
   const [apiEndpoint, setApiEndpoint] = useState<string>('');
   const [apiKey, setApiKey] = useState<string>('');
   const [modelName, setModelName] = useState<string>('claude-sonnet-4-6');
-  const [availableModels, setAvailableModels] = useState<string[]>([]);
-  const [isFetchingModels, setIsFetchingModels] = useState(false);
-  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const modelDropdownRef = useRef<HTMLDivElement>(null);
 
+  // 页面打开时，自动读取之前保存的 API 配置
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (modelDropdownRef.current && !modelDropdownRef.current.contains(e.target as Node)) {
-        setModelDropdownOpen(false);
+    try {
+      const stored = localStorage.getItem(API_STORAGE_KEY);
+      if (stored) {
+        const config = JSON.parse(stored);
+        if (config.apiEndpoint) setApiEndpoint(config.apiEndpoint);
+        if (config.apiKey) setApiKey(config.apiKey);
+        if (config.modelName) setModelName(config.modelName);
       }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    } catch {}
   }, []);
 
-  const buildModelCacheKey = () => {
-    if (!apiKey.trim()) return '';
-    const normalizedEndpoint = apiEndpoint.trim().replace(/\/+$/, '') || 'default';
-    let hash = 2166136261;
-    const fingerprint = apiKey.trim();
-    for (let i = 0; i < fingerprint.length; i++) {
-      hash ^= fingerprint.charCodeAt(i);
-      hash = Math.imul(hash, 16777619);
+  // API 信息变化时自动保存
+  useEffect(() => {
+    if (apiEndpoint || apiKey || modelName) {
+      localStorage.setItem(API_STORAGE_KEY, JSON.stringify({
+        apiEndpoint,
+        apiKey,
+        modelName,
+      }));
     }
-    return `${normalizedEndpoint}::${(hash >>> 0).toString(36)}`;
-  };
-
-  const loadCachedModels = () => {
-    const cacheKey = buildModelCacheKey();
-    if (!cacheKey) return [];
-    try {
-      const raw = localStorage.getItem(MODEL_CACHE_KEY);
-      if (!raw) return [];
-      const cache = JSON.parse(raw);
-      const entry = cache[cacheKey];
-      if (entry && Array.isArray(entry.models) && entry.models.length > 0) {
-        return entry.models;
-      }
-    } catch {}
-    return [];
-  };
-
-  const saveModelsToCache = (models: string[]) => {
-    const cacheKey = buildModelCacheKey();
-    if (!cacheKey) return;
-    try {
-      const raw = localStorage.getItem(MODEL_CACHE_KEY);
-      const cache = raw ? JSON.parse(raw) : {};
-      cache[cacheKey] = { models, updatedAt: Date.now() };
-      localStorage.setItem(MODEL_CACHE_KEY, JSON.stringify(cache));
-    } catch {}
-  };
-
-  const fetchModels = async () => {
-    if (!apiKey.trim()) {
-      setStatus('错误：请先填写 API Key');
-      return;
-    }
-    setIsFetchingModels(true);
-    try {
-      const endpoint = apiEndpoint.trim().replace(/\/+$/, '');
-      let models: string[] = [];
-
-      if (endpoint.includes('generativelanguage.googleapis.com')) {
-        const resp = await fetch(`${endpoint}/models?key=${apiKey.trim()}`);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json();
-        if (data.models) models = data.models.map((m: any) => m.name.replace('models/', ''));
-      } else {
-        const resp = await fetch(`${endpoint}/models`, {
-          headers: {
-            'Authorization': `Bearer ${apiKey.trim()}`,
-            'Content-Type': 'application/json',
-          },
-        });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json();
-        if (Array.isArray(data.data)) models = data.data.map((m: any) => m.id);
-      }
-
-      const normalized = [...new Set(models.map((m: string) => m.trim()).filter(Boolean))];
-      if (normalized.length === 0) throw new Error('API 返回了空模型列表');
-
-      saveModelsToCache(normalized);
-      setAvailableModels(normalized);
-      if (!modelName || !normalized.includes(modelName)) {
-        setModelName(normalized[0]);
-      }
-      setStatus('✅ 模型列表拉取成功');
-    } catch (err: any) {
-      setStatus(`拉取模型失败：${err.message}`);
-    } finally {
-      setIsFetchingModels(false);
-    }
-  };
+  }, [apiEndpoint, apiKey, modelName]);
 
   const extractMessages = (jsonData: any): Message[] => {
     const messages = jsonData?.messages || jsonData?.chat_log || jsonData?.conversation || [];
@@ -218,97 +133,13 @@ ${conversationText}
       <p style={{ fontSize: '0.9em', color: '#aaa', marginBottom: '20px' }}>把小手机（EVE/兔K机等）导出的聊天记录JSON文件上传，自动生成摘要并存入对应角色的跨场景记忆库。</p>
 
       <div style={{ background: '#2a2a2a', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
-        <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: '#a0d2f0' }}>⚙️ API 配置</h3>
+        <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: '#a0d2f0' }}>⚙️ API 配置（只需填一次，自动记住）</h3>
         <input type="text" placeholder="API地址 (如 https://api.xxx.com)" value={apiEndpoint} onChange={(e) => setApiEndpoint(e.target.value)} style={inputStyle} />
         <input type="password" placeholder="API Key" value={apiKey} onChange={(e) => setApiKey(e.target.value)} style={inputStyle} />
-        
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '6px 0' }}>
-          <div ref={modelDropdownRef} style={{ flex: 1, position: 'relative' }}>
-            <div
-              onClick={() => availableModels.length > 0 && setModelDropdownOpen(!modelDropdownOpen)}
-              style={{
-                ...inputStyle,
-                margin: '0',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                cursor: availableModels.length > 0 ? 'pointer' : 'text',
-              }}
-            >
-              <input
-                type="text"
-                placeholder="模型名称"
-                value={modelName}
-                onChange={(e) => setModelName(e.target.value)}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  outline: 'none',
-                  color: '#e0e0e0',
-                  fontSize: '0.9em',
-                  width: '100%',
-                  padding: 0,
-                  margin: 0,
-                }}
-              />
-              {availableModels.length > 0 && (
-                <ChevronDown size={14} style={{ flexShrink: 0, marginLeft: '8px', color: '#888' }} />
-              )}
-            </div>
-            {modelDropdownOpen && availableModels.length > 0 && (
-              <div style={{
-                position: 'absolute',
-                top: '100%',
-                left: 0,
-                right: 0,
-                zIndex: 50,
-                maxHeight: '200px',
-                overflowY: 'auto',
-                background: '#333',
-                border: '1px solid #555',
-                borderRadius: '8px',
-                marginTop: '4px',
-              }}>
-                {availableModels.map(m => (
-                  <div
-                    key={m}
-                    onClick={() => { setModelName(m); setModelDropdownOpen(false); }}
-                    style={{
-                      padding: '8px 12px',
-                      cursor: 'pointer',
-                      fontSize: '0.85em',
-                      color: m === modelName ? '#90c890' : '#ccc',
-                      background: m === modelName ? '#2a352a' : 'transparent',
-                    }}
-                  >
-                    {m === modelName && <Check size={12} style={{ marginRight: '6px', display: 'inline' }} />}
-                    {m}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <button
-            onClick={fetchModels}
-            disabled={isFetchingModels}
-            style={{
-              background: '#4a90d9',
-              color: '#fff',
-              border: 'none',
-              padding: '8px 12px',
-              borderRadius: '8px',
-              fontSize: '0.8em',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              flexShrink: 0,
-            }}
-          >
-            <RefreshCw size={12} className={isFetchingModels ? 'animate-spin' : ''} />
-            拉取模型
-          </button>
-        </div>
+        <input type="text" placeholder="模型名称 (如 claude-sonnet-4-6)" value={modelName} onChange={(e) => setModelName(e.target.value)} style={inputStyle} />
+        <p style={{ fontSize: '0.75em', color: '#888', margin: '6px 0 0 0' }}>
+          填过一次后会自动保存，下次打开不用再填。
+        </p>
       </div>
 
       <div style={{ background: '#2a2a2a', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
