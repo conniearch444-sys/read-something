@@ -2384,15 +2384,6 @@ const App: React.FC = () => {
           />
         </div>
 {currentView === AppView.SETTINGS && (
-  <>
-    
-      <div id="memory-list" style={{maxHeight:'160px', overflow:'auto'}}>加载中...</div>
-      <div style={{display:'flex', gap:'8px', marginTop:'6px'}}>
-        <button id="memory-delete-selected-btn" style={{background:'#d94a4a', color:'#fff', border:'none', borderRadius:'4px', padding:'4px 8px', fontSize:'10px', cursor:'pointer'}}>删除选中</button>
-        <button id="memory-clear-all-btn" style={{background:'#555', color:'#fff', border:'none', borderRadius:'4px', padding:'4px 8px', fontSize:'10px', cursor:'pointer'}}>清空全部</button>
-      </div>
-      <div id="memory-status" style={{marginTop:'4px', fontSize:'10px', color:'#888'}}></div>
-    </div>
     <Settings
       isDarkMode={isDarkMode}
             onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}
