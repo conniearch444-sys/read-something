@@ -1294,11 +1294,6 @@ const App: React.FC = () => {
     };
     checkConnection();
   }, []); 
-
-  return () => {
-    refreshBtn.removeEventListener('click', refresh);
-  };
-}, []);
   
   const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
     setNotification({ show: true, message, type });
