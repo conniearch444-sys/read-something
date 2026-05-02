@@ -5,6 +5,7 @@ import MultiSelectDropdown from './MultiSelectDropdown';
 import ResolvedImage from '../ResolvedImage';
 import { parseSillyTavernJson, parseSillyTavernPng, SillyTavernImportResult } from '../../utils/sillyTavernImport';
 import { saveImageFile } from '../../utils/imageStorage';
+import ImportMemory from '../ImportMemory';
 
 interface CharacterSettingsProps {
   characters: Character[];
@@ -386,6 +387,8 @@ const CharacterSettings: React.FC<CharacterSettingsProps> = ({
         })}
 
       </div>
+
+      <ImportMemory />
 
       {/* 补全信息弹窗 */}
       {importDialog.open && importDialog.result && (
