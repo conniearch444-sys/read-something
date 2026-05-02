@@ -45,14 +45,19 @@ export default function ImportMemory() {
     const endpoint = apiConfig.endpoint.replace(/\/+$/, '');
     const model = apiConfig.model || 'claude-sonnet-4-6';
 
-    // 优先取最近300条，兼顾上下文
-    const recentMessages = messages.slice(-300);
-    
+    // 保留所有对话，分段总结
     const chunkSize = 150;
     const chunks: string[] = [];
-    for (let i = 0; i < recentMessages.length; i += chunkSize) {
-      const slice = recentMessages.slice(i, i + chunkSize);
+    for (let i = 0; i < messages.length; i += chunkSize) {
+      const slice = messages.slice(i, i + chunkSize);
+      const firstTime = slice[0]?.timestamp
+        ? new Date(slice[0].timestamp).toLocaleString('zh-CN')
+        : '未知时间';
+      const lastTime = slice[slice.length - 1]?.timestamp
+        ? new Date(slice[slice.length - 1].timestamp).toLocaleString('zh-CN')
+        : '未知时间';
       chunks.push(
+        `[时间段：${firstTime} 至 ${lastTime}]\n` +
         slice
           .map(msg => `${msg.sender === 'user' ? '用户' : 'AI'}：${msg.text}`)
           .join('\n')
@@ -61,11 +66,28 @@ export default function ImportMemory() {
 
     if (chunks.length === 0) return '';
 
+    // 只有一段时直接总结
     if (chunks.length === 1) {
-      const prompt = `你是一位细心的回忆录作者。请阅读下面这段对话，并以"他们"的口吻，将其中最重要或最动人的信息，编织成一段200字以内的生动回忆。重点关注用户的个人信息更新、情感瞬间和角色的有趣反应。
+      const prompt = `你是${characterName || '角色'}，正在回顾和用户的聊天。
+
+【任务】把下面这段聊天记录浓缩成一段回忆。
+
+【格式要求】
+- 开头固定写：[YYYY/MM/DD HH:mm - YYYY/MM/DD HH:mm]（使用对话记录前面的时间段标注）
+- 紧接一段中文总结（200-400字），用「我」指代自己，用「用户」指代对方
+- 写成一段连贯的话，不要用列表、编号或分点
+- 只写聊天里真实出现过的内容，禁止编造事实妄加揣测
+
+【内容要求】
+- 按时间顺序描述对话推进过程
+- 记录用户分享的具体个人信息（地点、心情、计划、状态变化），并用引号标注用户原话
+- 记录你自己的回应方式和情感反应
+- 捕捉这段对话中最独特的情感瞬间
+
 对话记录：
 ${chunks[0]}
-请开始你的回忆：`;
+
+你的回忆：`;
 
       const response = await fetch(`${endpoint}/chat/completions`, {
         method: 'POST',
@@ -76,7 +98,7 @@ ${chunks[0]}
         body: JSON.stringify({
           model,
           messages: [{ role: 'user', content: prompt }],
-          max_tokens: 600,
+          max_tokens: 1500,
           temperature: 0.7,
         }),
       });
@@ -84,21 +106,31 @@ ${chunks[0]}
       return (data?.choices?.[0]?.message?.content || '').trim();
     }
 
+    // 多段：先各自总结，再拼接
     const partSummaries: string[] = [];
     for (let i = 0; i < chunks.length; i++) {
       setStatus(`正在总结第 ${i + 1}/${chunks.length} 部分...`);
 
-      const prompt = `你是一位细心的回忆录作者。请阅读下面这段对话片段，并以"他们"的口吻，将其中最重要或最动人的信息，编织成一段150字以内的生动回忆。
+      const prompt = `你是${characterName || '角色'}，正在回顾和用户的聊天。
 
-**你的任务不是列举话题，而是捕捉以下稍纵即逝的细节：**
-1. **关键旅程与决定**：用户和角色一起经历了什么？他们共同做出了哪些决定（比如规划了路线、定下了某个日子）？
-2. **用户的每一次“自我更新”**：用户透露了哪些新的个人信息？**请特别关注他/她反复提及或刚刚更新的内容**（如“我已经到杭州了”、“我换了新工作”、“我最近对xx很感兴趣”）。**对于反复出现的话题，请结合最新进展进行综合描述，而不是机械重复。**
-3. **情感与默契的瞬间**：对话中出现了哪些独特的情感时刻？是一个小小的争执、一个默契的笑点，还是一个温柔的安慰？
-4. **角色的“临场反应”**：角色是如何回应的？那是一个怎样的瞬间？（是停顿了一下？是发来了一个通话请求？是用了一个特别的称呼？）
+【任务】把下面这段聊天记录浓缩成一小段回忆。
 
-请开始你的回忆：
+【格式要求】
+- 开头固定写：[YYYY/MM/DD HH:mm - YYYY/MM/DD HH:mm]（使用对话记录前面的时间段标注）
+- 紧接一段中文总结（150-250字），用「我」指代自己，用「用户」指代对方
+- 写成一段连贯的话，不要用列表、编号或分点
+- 只写聊天里真实出现过的内容，禁止编造事实妄加揣测
+
+【内容要求】
+- 按时间顺序描述对话推进过程
+- 记录用户分享的具体个人信息（地点、心情、计划、状态变化），并用引号标注用户原话
+- 记录你自己的回应方式和情感反应
+- 捕捉这段对话中最独特的情感瞬间
+
 对话记录：
-${chunks[i]}`;
+${chunks[i]}
+
+你的回忆：`;
 
       try {
         const response = await fetch(`${endpoint}/chat/completions`, {
@@ -110,7 +142,7 @@ ${chunks[i]}`;
           body: JSON.stringify({
             model,
             messages: [{ role: 'user', content: prompt }],
-            max_tokens: 600,
+            max_tokens: 800,
             temperature: 0.7,
           }),
         });
@@ -120,10 +152,11 @@ ${chunks[i]}`;
           partSummaries.push(partText);
         }
       } catch (e) {
-        console.error(`分段总结失败: ${i+1}`, e);
+        console.error(`分段总结失败: ${i + 1}`, e);
       }
     }
 
+    // 直接拼接，保留完整信息
     return partSummaries.join('\n\n');
   };
 
@@ -173,7 +206,7 @@ ${chunks[i]}`;
   return (
     <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto', fontFamily: '-apple-system, sans-serif', color: '#e0e0e0' }}>
       <h2 style={{ color: '#fff', fontSize: '1.2em', marginBottom: '16px' }}>📱 → 📖 跨APP记忆导入</h2>
-      <p style={{ fontSize: '0.9em', color: '#aaa', marginBottom: '20px' }}>把小手机（EVE/兔K机等）导出的聊天记录JSON文件上传，智能生成回忆并存入对应角色的跨场景记忆库。</p>
+      <p style={{ fontSize: '0.9em', color: '#aaa', marginBottom: '20px' }}>把小手机（EVE/兔K机等）导出的聊天记录JSON文件上传，智能分段生成回忆并存入对应角色的跨场景记忆库。</p>
 
       <div style={{ background: '#2a2a2a', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
         <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: '#a0d2f0' }}>⚙️ 状态</h3>
