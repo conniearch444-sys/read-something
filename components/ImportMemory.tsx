@@ -15,18 +15,22 @@ export default function ImportMemory({ theme }: { theme: ThemeClasses }) {
   // 根据全局 theme 生成统一配色
   const colors = {
     bg: theme.isDarkMode ? '#2d3748' : '#e0e5ec',
-    cardBg: theme.isDarkMode ? '#1a202c' : '#ffffff',
+    cardBg: theme.isDarkMode ? '#1a202c' : '#f0f2f5',
     text: theme.isDarkMode ? '#e2e8f0' : '#4a5568',
     subText: theme.isDarkMode ? '#a0aec0' : '#718096',
-    border: theme.isDarkMode ? '#4a5568' : '#cbd5e0',
+    border: theme.isDarkMode ? '#4a5568' : '#e2e8f0',
     accent: 'rgb(var(--theme-400) / 1)',
-    danger: '#d94a4a',
+    danger: '#e53e3e',
     neutral: theme.isDarkMode ? '#4a5568' : '#a0aec0',
     inputBg: theme.isDarkMode ? '#1a202c' : '#ffffff',
-    inputBorder: theme.isDarkMode ? '#4a5568' : '#cbd5e0',
+    inputBorder: theme.isDarkMode ? '#4a5568' : '#e2e8f0',
     buttonPrimary: 'rgb(var(--theme-400) / 1)',
     success: theme.isDarkMode ? '#90c890' : '#276749',
     error: theme.isDarkMode ? '#d9a0a0' : '#c53030',
+    cardShadow: theme.isDarkMode
+      ? '0 4px 12px rgba(0,0,0,0.3)'
+      : '5px 5px 10px #d1d5db, -5px -5px 10px #ffffff',
+    listBg: theme.isDarkMode ? '#0d1117' : '#f7f8fa',
   };
 
   const getApiConfig = (): ApiConfig | null => {
@@ -56,7 +60,7 @@ export default function ImportMemory({ theme }: { theme: ThemeClasses }) {
   const generateSummaries = async (messages: Message[]): Promise<string[]> => {
     const apiConfig = getApiConfig();
     if (!apiConfig || !apiConfig.apiKey) {
-      throw new Error('未找到 API 配置，请先在“设置”中保存 API Key。');
+      throw new Error('未找到 API 配置，请先在"设置"中保存 API Key。');
     }
 
     const endpoint = apiConfig.endpoint.replace(/\/+$/, '');
@@ -281,14 +285,14 @@ ${chunks[i]}
       <h2 style={{ color: colors.accent, fontSize: '1.2em', marginBottom: '16px' }}>📱 → 📖 跨APP记忆导入</h2>
       <p style={{ fontSize: '0.9em', color: colors.subText, marginBottom: '20px' }}>把小手机（EVE/兔K机等）导出的聊天记录JSON文件上传，自动分段总结，每段独立存储为一条记忆卡片。</p>
 
-      <div style={{ background: colors.cardBg, borderRadius: '12px', padding: '16px', marginBottom: '16px', border: `1px solid ${colors.border}` }}>
+      <div style={{ background: colors.cardBg, borderRadius: '12px', padding: '16px', marginBottom: '16px', border: `1px solid ${colors.border}`, boxShadow: colors.cardShadow }}>
         <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: colors.accent }}>⚙️ 状态</h3>
         <p style={{ fontSize: '0.85em', color: getApiConfig() ? colors.success : colors.error }}>
           {getApiConfig() ? '✅ 已读取到网站API配置，可直接上传文件' : '❌ 未读取到配置，请先在网站"设置"中保存API Key'}
         </p>
       </div>
 
-      <div style={{ background: colors.cardBg, borderRadius: '12px', padding: '16px', marginBottom: '16px', border: `1px solid ${colors.border}` }}>
+      <div style={{ background: colors.cardBg, borderRadius: '12px', padding: '16px', marginBottom: '16px', border: `1px solid ${colors.border}`, boxShadow: colors.cardShadow }}>
         <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: colors.accent }}>👤 角色名</h3>
         <input
           type="text"
@@ -304,7 +308,7 @@ ${chunks[i]}
         <p style={{ fontSize: '0.8em', color: colors.subText, margin: '8px 0 0 0' }}>如果JSON里有角色名会自动识别，也可以手动填写</p>
       </div>
 
-      <div style={{ background: colors.cardBg, borderRadius: '12px', padding: '16px', marginBottom: '16px', border: `1px solid ${colors.border}` }}>
+      <div style={{ background: colors.cardBg, borderRadius: '12px', padding: '16px', marginBottom: '16px', border: `1px solid ${colors.border}`, boxShadow: colors.cardShadow }}>
         <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: colors.accent }}>📂 上传文件</h3>
         <input type="file" accept=".json" ref={fileInputRef} onChange={handleFileUpload} style={{ display: 'none' }} />
         <button
@@ -329,7 +333,8 @@ ${chunks[i]}
           background: status.startsWith('✅') ? (theme.isDarkMode ? '#2a352a' : '#e6fffa') : (theme.isDarkMode ? '#2a2a2a' : '#fff5f5'),
           borderRadius: '12px', padding: '16px',
           color: status.startsWith('✅') ? colors.success : colors.error,
-          fontSize: '0.9em', marginBottom: '16px', border: `1px solid ${colors.border}`
+          fontSize: '0.9em', marginBottom: '16px', border: `1px solid ${colors.border}`,
+          boxShadow: colors.cardShadow
         }}>
           {status}
         </div>
@@ -341,7 +346,8 @@ ${chunks[i]}
         borderRadius: '12px', padding: '14px',
         fontSize: '11px', fontFamily: '-apple-system, sans-serif',
         marginTop: '8px',
-        border: `1px solid ${colors.border}`
+        border: `1px solid ${colors.border}`,
+        boxShadow: colors.cardShadow
       }}>
         <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'8px'}}>
           <strong style={{color: colors.accent, fontSize:'1em'}}>🧠 跨书记忆管理</strong>
@@ -354,7 +360,8 @@ ${chunks[i]}
           maxHeight:'400px', overflowY:'auto',
           WebkitOverflowScrolling:'touch', touchAction:'pan-y',
           marginBottom:'8px', border:`1px solid ${colors.border}`,
-          borderRadius:'6px', padding:'4px'
+          borderRadius:'6px', padding:'4px',
+          background: colors.listBg
         }}>加载中...</div>
         <div style={{display:'flex', gap:'8px'}}>
           <button id="memory-delete-selected-btn" style={{
@@ -370,4 +377,4 @@ ${chunks[i]}
       </div>
     </div>
   );
-}
+        }
