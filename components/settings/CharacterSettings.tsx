@@ -388,7 +388,7 @@ const CharacterSettings: React.FC<CharacterSettingsProps> = ({
 
       </div>
 
-      <ImportMemory />
+      <ImportMemory theme={theme} />
 
       {/* 补全信息弹窗 */}
       {importDialog.open && importDialog.result && (
