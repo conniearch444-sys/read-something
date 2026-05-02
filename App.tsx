@@ -2324,6 +2324,14 @@ const App: React.FC = () => {
 
       {/* Main Content Area */}
       <div className={`flex-1 flex flex-col overflow-hidden relative ${viewAnimationClass}`}>
+        <div style={{position:'fixed',bottom:0,left:0,right:0,zIndex:9999,background:'#1a1a1a',color:'#0f0',fontSize:'10px',maxHeight:'200px',overflow:'auto',padding:'8px',fontFamily:'monospace',whiteSpace:'pre-wrap'}}>
+  {(() => {
+    try {
+      const raw = localStorage.getItem('cross_book_memories_v1');
+      return raw ? JSON.stringify(JSON.parse(raw), null, 2) : '记忆库为空';
+    } catch { return '读取失败'; }
+  })()}
+</div>
         {currentView === AppView.LIBRARY && (
           <Library
             books={books}
