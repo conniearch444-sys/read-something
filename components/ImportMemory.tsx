@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { ApiConfig } from './settings/types';
 
 interface Message {
   sender: string;
@@ -6,37 +7,40 @@ interface Message {
   timestamp?: number;
 }
 
-interface ApiConfig {
-  provider: string;
-  endpoint: string;
-  apiKey: string;
-  model: string;
-}
-
 export default function ImportMemory() {
   const [status, setStatus] = useState<string>('');
   const [characterName, setCharacterName] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 专门读取“总结专用API”配置
-  const getSummaryApiConfig = (): ApiConfig | null => {
+  // 从项目中读取缓存的 API 配置
+  const getApiConfig = (): ApiConfig | null => {
     try {
-      const raw = localStorage.getItem('app_settings');
-      if (!raw) return null;
-      const settings = JSON.parse(raw);
-      const summaryApi = settings?.readerMore?.feature?.summaryApi;
-      if (summaryApi && summaryApi.apiKey && summaryApi.endpoint) {
-        return {
-          provider: summaryApi.provider || 'CUSTOM',
-          endpoint: summaryApi.endpoint,
-          apiKey: summaryApi.apiKey,
-          model: summaryApi.model || 'claude-sonnet-4-6',
-        };
+      // 1. 尝试读取主 API 配置（键名 'app_api_config'）
+      const mainConfig = localStorage.getItem('app_api_config');
+      if (mainConfig) {
+        const parsed = JSON.parse(mainConfig);
+        if (parsed.apiKey && parsed.endpoint) {
+          return parsed as ApiConfig;
+        }
       }
-    } catch {}
+
+      // 2. 如果主配置不存在或不完整，尝试读取设置里的总结专用 API
+      const settings = localStorage.getItem('app_settings');
+      if (settings) {
+        const parsedSettings = JSON.parse(settings);
+        const summaryApi = parsedSettings?.readerMore?.feature?.summaryApi;
+        if (summaryApi?.apiKey && summaryApi?.endpoint) {
+          return summaryApi as ApiConfig;
+        }
+      }
+    } catch (e) {
+      console.error('读取 API 配置失败', e);
+    }
+
     return null;
   };
 
+  // 提取对话
   const extractMessages = (jsonData: any): Message[] => {
     const messages = jsonData?.messages || jsonData?.chat_log || jsonData?.conversation || [];
     return messages
@@ -48,10 +52,11 @@ export default function ImportMemory() {
       }));
   };
 
+  // 调用 AI 生成摘要
   const generateSummary = async (messages: Message[]): Promise<string> => {
-    const apiConfig = getSummaryApiConfig();
-    if (!apiConfig) {
-      throw new Error('未读取到总结专用API配置。请在设置 -> 更多阅读设置中启用并填写总结API。');
+    const apiConfig = getApiConfig();
+    if (!apiConfig || !apiConfig.apiKey) {
+      throw new Error('未找到 API 配置，请先在“设置”中保存 API Key。');
     }
 
     const endpoint = apiConfig.endpoint.replace(/\/+$/, '');
@@ -74,7 +79,7 @@ ${conversationText}
         'Authorization': `Bearer ${apiConfig.apiKey}`,
       },
       body: JSON.stringify({
-        model: apiConfig.model,
+        model: apiConfig.model || 'claude-sonnet-4-6',
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 500,
         temperature: 0.7,
@@ -128,19 +133,15 @@ ${conversationText}
     }
   };
 
-  const summaryConfig = getSummaryApiConfig();
-
   return (
     <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto', fontFamily: '-apple-system, sans-serif', color: '#e0e0e0' }}>
       <h2 style={{ color: '#fff', fontSize: '1.2em', marginBottom: '16px' }}>📱 → 📖 跨APP记忆导入</h2>
       <p style={{ fontSize: '0.9em', color: '#aaa', marginBottom: '20px' }}>把小手机（EVE/兔K机等）导出的聊天记录JSON文件上传，自动生成摘要并存入对应角色的跨场景记忆库。</p>
 
       <div style={{ background: '#2a2a2a', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
-        <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: '#a0d2f0' }}>⚙️ API 状态</h3>
-        <p style={{ fontSize: '0.85em', color: summaryConfig ? '#90c890' : '#d9a0a0' }}>
-          {summaryConfig
-            ? `✅ 已读取总结专用API (模型: ${summaryConfig.model || '未设置'})`
-            : '❌ 未读取到总结API配置。请在网站设置 -> 更多阅读设置中启用并填写总结专用API。'}
+        <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: '#a0d2f0' }}>⚙️ 状态</h3>
+        <p style={{ fontSize: '0.85em', color: getApiConfig() ? '#90c890' : '#d9a0a0' }}>
+          {getApiConfig() ? '✅ 已读取到网站API配置，可直接上传文件' : '❌ 未读取到配置，请先在网站“设置”中保存API Key'}
         </p>
       </div>
 
