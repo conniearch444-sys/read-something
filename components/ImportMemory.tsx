@@ -25,8 +25,8 @@ export default function ImportMemory({ theme }: { theme: ThemeClasses }) {
     inputBg: theme.isDarkMode ? '#1a202c' : '#ffffff',
     inputBorder: theme.isDarkMode ? '#4a5568' : '#cbd5e0',
     buttonPrimary: 'rgb(var(--theme-400) / 1)',
-    success: '#90c890',
-    error: '#d9a0a0',
+    success: theme.isDarkMode ? '#90c890' : '#276749',
+    error: theme.isDarkMode ? '#d9a0a0' : '#c53030',
   };
 
   const getApiConfig = (): ApiConfig | null => {
