@@ -1294,69 +1294,6 @@ const App: React.FC = () => {
     };
     checkConnection();
   }, []); 
-// 记忆管理器交互逻辑
-useEffect(() => {
-  const KEY = 'cross_book_memories_v1';
-  const listEl = document.getElementById('memory-list');
-  const statusEl = document.getElementById('memory-status');
-  const refreshBtn = document.getElementById('memory-refresh-btn');
-  const deleteSelectedBtn = document.getElementById('memory-delete-selected-btn');
-  const clearAllBtn = document.getElementById('memory-clear-all-btn');
-  if (!listEl || !statusEl || !refreshBtn || !deleteSelectedBtn || !clearAllBtn) return;
-
-  const load = () => {
-    let memories = [];
-    try { memories = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch {}
-    if (!memories.length) {
-      listEl.innerHTML = '<div style="color:#888; padding:8px;">暂无记忆</div>';
-      return memories;
-    }
-    listEl.innerHTML = memories.map((m, i) => `
-      <div style="display:flex; align-items:flex-start; gap:8px; padding:6px 0; border-bottom:1px solid #222; font-size:10px;">
-        <input type="checkbox" id="mm_${i}" style="margin-top:3px;" />
-        <div style="flex:1;">
-          <div><b>${m.characterName || '未知'}</b> · ${new Date(m.updatedAt).toLocaleString('zh-CN')}</div>
-          <div style="color:#aaa; word-break:break-all;">${m.summary || '(空)'}</div>
-        </div>
-      </div>
-    `).join('');
-    return memories;
-  };
-
-  let currentMemories = load();
-
-  const refresh = () => {
-    currentMemories = load();
-    statusEl.textContent = '';
-  };
-  refreshBtn.addEventListener('click', refresh);
-
-  const getSelectedIndices = () => {
-    const indices = [];
-    for (let i = 0; i < currentMemories.length; i++) {
-      const cb = document.getElementById('mm_' + i);
-      if (cb?.checked) indices.push(i);
-    }
-    return indices.sort((a, b) => b - a);
-  };
-
-  deleteSelectedBtn.addEventListener('click', () => {
-    const selected = getSelectedIndices();
-    if (!selected.length) { statusEl.textContent = '请先勾选条目'; return; }
-    if (!confirm(`确认删除 ${selected.length} 条记忆？`)) return;
-    for (const i of selected) currentMemories.splice(i, 1);
-    localStorage.setItem(KEY, JSON.stringify(currentMemories));
-    statusEl.textContent = `✅ 已删除 ${selected.length} 条`;
-    refresh();
-  });
-
-  clearAllBtn.addEventListener('click', () => {
-    if (!confirm('清空所有跨书记忆？此操作不可恢复。')) return;
-    localStorage.setItem(KEY, '[]');
-    currentMemories = [];
-    statusEl.textContent = '✅ 已清空';
-    refresh();
-  });
 
   return () => {
     refreshBtn.removeEventListener('click', refresh);
@@ -2453,16 +2390,7 @@ useEffect(() => {
         </div>
 {currentView === AppView.SETTINGS && (
   <>
-    <div id="memory-manager" style={{
-      position:'relative', bottom:'auto', left:'auto', right:'auto',
-      background:'#111', color:'#ddd', fontSize:'11px',
-      maxHeight:'240px', overflow:'auto', padding:'10px',
-      fontFamily:'-apple-system, sans-serif', borderTop:'1px solid #333'
-    }}>
-      <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'6px'}}>
-        <strong style={{color:'#a0d2f0'}}>🧠 跨书记忆管理</strong>
-        <button id="memory-refresh-btn" style={{background:'#333', color:'#ccc', border:'none', borderRadius:'4px', padding:'4px 8px', fontSize:'10px', cursor:'pointer'}}>刷新</button>
-      </div>
+    
       <div id="memory-list" style={{maxHeight:'160px', overflow:'auto'}}>加载中...</div>
       <div style={{display:'flex', gap:'8px', marginTop:'6px'}}>
         <button id="memory-delete-selected-btn" style={{background:'#d94a4a', color:'#fff', border:'none', borderRadius:'4px', padding:'4px 8px', fontSize:'10px', cursor:'pointer'}}>删除选中</button>
