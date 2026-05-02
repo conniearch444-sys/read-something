@@ -10,6 +10,7 @@ interface Message {
 export default function ImportMemory() {
   const [status, setStatus] = useState<string>('');
   const [characterName, setCharacterName] = useState<string>('');
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const getApiConfig = (): ApiConfig | null => {
@@ -39,7 +40,7 @@ export default function ImportMemory() {
   const generateSummary = async (messages: Message[]): Promise<string> => {
     const apiConfig = getApiConfig();
     if (!apiConfig || !apiConfig.apiKey) {
-      throw new Error('未找到 API 配置，请先在“设置”中保存 API Key。');
+      throw new Error('未找到 API 配置，请先在"设置"中保存 API Key。');
     }
 
     const endpoint = apiConfig.endpoint.replace(/\/+$/, '');
@@ -217,14 +218,39 @@ ${chunks[i]}
         return memories;
       }
       listEl.innerHTML = memories.map((m, i) => `
-        <div style="display:flex; align-items:flex-start; gap:8px; padding:6px 0; border-bottom:1px solid #222; font-size:10px;">
-          <input type="checkbox" id="mm_${i}" style="margin-top:3px;" />
-          <div style="flex:1;">
-            <div><b>${m.characterName || '未知'}</b> · ${new Date(m.updatedAt).toLocaleString('zh-CN')}</div>
-            <div style="color:#aaa; word-break:break-all;">${m.summary || '(空)'}</div>
+        <div style="padding:6px 0; border-bottom:1px solid #333; font-size:10px;">
+          <div style="display:flex; align-items:flex-start; gap:8px; cursor:pointer;" data-memory-index="${i}">
+            <input type="checkbox" id="mm_${i}" style="margin-top:3px; flex-shrink:0;" onclick="event.stopPropagation();" />
+            <div style="flex:1; min-width:0;">
+              <div><b>${m.characterName || '未知'}</b> · ${new Date(m.updatedAt).toLocaleString('zh-CN')}</div>
+              <div id="memory-content-${i}" class="memory-text" style="color:#aaa; word-break:break-all; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;">
+                ${m.summary || '(空)'}
+              </div>
+              <div id="memory-content-full-${i}" class="memory-text-full" style="color:#aaa; word-break:break-all; display:none; max-height:200px; overflow-y:auto; WebkitOverflowScrolling:touch; margin-top:4px;">
+                ${m.summary || '(空)'}
+              </div>
+            </div>
           </div>
         </div>
       `).join('');
+
+      // 绑定展开/收起事件
+      listEl.querySelectorAll('[data-memory-index]').forEach((el) => {
+        el.addEventListener('click', () => {
+          const index = parseInt(el.getAttribute('data-memory-index') || '0', 10);
+          const shortEl = document.getElementById('memory-content-' + index);
+          const fullEl = document.getElementById('memory-content-full-' + index);
+          if (!shortEl || !fullEl) return;
+          if (fullEl.style.display === 'none') {
+            shortEl.style.display = 'none';
+            fullEl.style.display = 'block';
+          } else {
+            shortEl.style.display = '-webkit-box';
+            fullEl.style.display = 'none';
+          }
+        });
+      });
+
       return memories;
     };
 
@@ -232,6 +258,7 @@ ${chunks[i]}
 
     const refresh = () => {
       currentMemories = load();
+      setExpandedIndex(null);
       statusEl.textContent = '';
     };
     refreshBtn.addEventListener('click', refresh);
@@ -276,7 +303,7 @@ ${chunks[i]}
       <div style={{ background: '#2a2a2a', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
         <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: '#a0d2f0' }}>⚙️ 状态</h3>
         <p style={{ fontSize: '0.85em', color: getApiConfig() ? '#90c890' : '#d9a0a0' }}>
-          {getApiConfig() ? '✅ 已读取到网站API配置，可直接上传文件' : '❌ 未读取到配置，请先在网站“设置”中保存API Key'}
+          {getApiConfig() ? '✅ 已读取到网站API配置，可直接上传文件' : '❌ 未读取到配置，请先在网站"设置"中保存API Key'}
         </p>
       </div>
 
@@ -306,7 +333,7 @@ ${chunks[i]}
           <strong style={{color:'#a0d2f0', fontSize:'1em'}}>🧠 跨书记忆管理</strong>
           <button id="memory-refresh-btn" style={{background:'#333', color:'#ccc', border:'none', borderRadius:'6px', padding:'4px 8px', fontSize:'10px', cursor:'pointer'}}>刷新</button>
         </div>
-        <div id="memory-list" style={{maxHeight:'260px', overflowY:'auto', WebkitOverflowScrolling:'touch', touchAction:'pan-y', marginBottom:'8px', border:'1px solid #333', borderRadius:'6px', padding:'4px'}}>加载中...</div>
+        <div id="memory-list" style={{maxHeight:'400px', overflowY:'auto', WebkitOverflowScrolling:'touch', touchAction:'pan-y', marginBottom:'8px', border:'1px solid #333', borderRadius:'6px', padding:'4px'}}>加载中...</div>
         <div style={{display:'flex', gap:'8px'}}>
           <button id="memory-delete-selected-btn" style={{background:'#d94a4a', color:'#fff', border:'none', borderRadius:'6px', padding:'4px 8px', fontSize:'10px', cursor:'pointer'}}>删除选中</button>
           <button id="memory-clear-all-btn" style={{background:'#555', color:'#fff', border:'none', borderRadius:'6px', padding:'4px 8px', fontSize:'10px', cursor:'pointer'}}>清空全部</button>
