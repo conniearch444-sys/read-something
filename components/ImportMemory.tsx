@@ -11,6 +11,7 @@ export default function ImportMemory({ theme }: { theme: ThemeClasses }) {
   const [status, setStatus] = useState<string>('');
   const [characterName, setCharacterName] = useState<string>('');
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
+  const [chunkSize, setChunkSize] = useState<number>(150);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const colors = {
@@ -53,7 +54,7 @@ export default function ImportMemory({ theme }: { theme: ThemeClasses }) {
       }));
   };
 
-  const generateSummaries = async (messages: Message[]): Promise<string[]> => {
+  const generateSummaries = async (messages: Message[], customChunkSize: number): Promise<string[]> => {
     const apiConfig = getApiConfig();
     if (!apiConfig || !apiConfig.apiKey) {
       throw new Error('未找到 API 配置，请先在"设置"中保存 API Key。');
@@ -62,10 +63,10 @@ export default function ImportMemory({ theme }: { theme: ThemeClasses }) {
     const endpoint = apiConfig.endpoint.replace(/\/+$/, '');
     const model = apiConfig.model || 'claude-sonnet-4-6';
 
-    const chunkSize = 150;
+    const size = Math.max(10, Math.min(500, customChunkSize || 150));
     const chunks: string[] = [];
-    for (let i = 0; i < messages.length; i += chunkSize) {
-      const slice = messages.slice(i, i + chunkSize);
+    for (let i = 0; i < messages.length; i += size) {
+      const slice = messages.slice(i, i + size);
       const firstTime = slice[0]?.timestamp
         ? new Date(slice[0].timestamp).toLocaleString('zh-CN')
         : '未知时间';
@@ -89,26 +90,25 @@ export default function ImportMemory({ theme }: { theme: ThemeClasses }) {
 
       const prompt = `你是${characterName || '角色'}，正在回顾和用户的聊天。
 
-【任务】把下面这段聊天记录浓缩成一小段回忆。
+【任务】无论这段对话有多长，你必须将其精简成一段 **不低于240字** 的中文回忆。重点记录信息增量，禁止因对话量大而偷懒。
 
 【格式要求】
-- 开头固定写：[YYYY/MM/DD HH:mm - YYYY/MM/DD HH:mm]（使用对话记录前面的时间段标注）
-- 紧接一段中文总结（150-250字），用「我」指代自己，用「用户」指代对方
+- 开头固定写：[YYYY/MM/DD HH:mm - YYYY/MM/DD HH:mm]
+- 用「我」指代自己，用「用户」指代对方
 - 写成一段连贯的话，不要用列表、编号或分点
 - 只写聊天里真实出现过的内容，禁止编造事实妄加揣测
 - 回答必须完整地结束，禁止写一半就停下
 - 禁止重复相同的句子或段落
 
 【内容要求】
-- 按时间顺序描述对话推进过程
-- 记录用户分享的具体个人信息（地点、心情、计划、状态变化），并用引号标注用户原话
-- 记录你自己的回应方式和情感反应
+- 优先记录用户分享的新信息（地点、心情、计划、状态变化）
+- 记录你的回应方式和情感反应
 - 捕捉这段对话中最独特的情感瞬间
 
 对话记录：
 ${chunks[i]}
 
-你的回忆：`;
+你的回忆（不低于240字）：`;
 
       try {
         const response = await fetch(`${endpoint}/chat/completions`, {
@@ -120,7 +120,7 @@ ${chunks[i]}
           body: JSON.stringify({
             model,
             messages: [{ role: 'user', content: prompt }],
-            max_tokens: 3000,
+            max_tokens: 4000,
             temperature: 0.7,
           }),
         });
@@ -156,7 +156,7 @@ ${chunks[i]}
         if (!detectedName) detectedName = '未知角色';
 
         try {
-          const summaries = await generateSummaries(messages);
+          const summaries = await generateSummaries(messages, chunkSize);
           if (summaries.length === 0) { setStatus('错误：AI没有返回有效的摘要'); return; }
           
           const existingMemories = JSON.parse(localStorage.getItem('cross_book_memories_v1') || '[]');
@@ -171,7 +171,7 @@ ${chunks[i]}
           const forOthers = existingMemories.filter((m: any) => m.characterName !== detectedName);
           localStorage.setItem('cross_book_memories_v1', JSON.stringify([...forOthers, ...forThisChar]));
           
-          setStatus(`✅ 成功！已为「${detectedName}」存储 ${summaries.length} 条记忆。`);
+          setStatus(`✅ 成功！已为「${detectedName}」存储 ${summaries.length} 条记忆（每段 ${chunkSize} 条对话）。`);
         } catch (apiError) {
           setStatus(`调用AI失败：${apiError instanceof Error ? apiError.message : '请检查API配置'}`);
         }
@@ -230,7 +230,6 @@ ${chunks[i]}
         const isEditing = editingIndex === i;
 
         if (isEditing) {
-          // 编辑模式
           return `
             <div style="padding:6px 0; border-bottom:1px solid ${colors.border}; font-size:13px; color:${colors.text};">
               <div style="font-weight:bold; font-size:13px; margin-bottom:4px;">${m.characterName || '未知'} · ${new Date(m.updatedAt).toLocaleString('zh-CN')}</div>
@@ -255,7 +254,6 @@ ${chunks[i]}
           `;
         }
 
-        // 正常显示模式
         return `
           <div style="padding:6px 0; border-bottom:1px solid ${colors.border}; font-size:13px; color:${colors.text};">
             <div style="display:flex; align-items:flex-start; gap:8px; cursor:pointer;" data-memory-index="${i}">
@@ -439,6 +437,33 @@ ${chunks[i]}
 
           <div className={theme.cardClass} style={{ borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
             <h3 style={{ fontSize: '1em', margin: '0 0 12px 0', color: colors.accent }}>📂 上传文件</h3>
+
+            {/* 分段大小设置 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+              <span style={{ fontSize: '0.85em', color: colors.subText, flexShrink: 0 }}>每段对话条数：</span>
+              <input
+                type="number"
+                value={chunkSize}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  if (!isNaN(val) && val >= 10 && val <= 500) {
+                    setChunkSize(val);
+                  } else if (e.target.value === '') {
+                    setChunkSize(150);
+                  }
+                }}
+                className={theme.inputClass}
+                style={{
+                  width: '80px', padding: '8px',
+                  borderRadius: '8px', fontSize: '0.9em',
+                  textAlign: 'center', boxSizing: 'border-box'
+                }}
+                min={10}
+                max={500}
+              />
+              <span style={{ fontSize: '0.75em', color: colors.subText }}>（10-500，默认150）</span>
+            </div>
+
             <input type="file" accept=".json" ref={fileInputRef} onChange={handleFileUpload} style={{ display: 'none' }} />
             <button
               onClick={() => fileInputRef.current?.click()}
@@ -504,4 +529,4 @@ ${chunks[i]}
       )}
     </div>
   );
-          }
+      }
