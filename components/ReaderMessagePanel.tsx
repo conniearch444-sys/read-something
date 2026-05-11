@@ -2072,7 +2072,7 @@ const summaryCardMaxEnd = bucket.chatSummaryCards && bucket.chatSummaryCards.len
 const safeBaseEnd = Math.max(summaryCardMaxEnd, bucket.chatAutoSummaryLastEnd || 0);
 setChatAutoSummaryLastEnd(
   readerMoreFeature.autoChatSummaryEnabled
-    ? Math.max(0, bucket.messages.length)
+    ? .messages.length)
     : Math.max(0, safeBaseEnd)
 );
 // === 修复结束 ===
@@ -2272,12 +2272,16 @@ setChatAutoSummaryLastEnd(
       }
 
       setMessages(incoming.messages);
-      messagesRef.current = incoming.messages;
-      setChatHistorySummary(incoming.chatHistorySummary || '');
-      setReadingPrefixSummaryByBookId(incoming.readingPrefixSummaryByBookId || {});
-      setChatSummaryCards(incoming.chatSummaryCards || []);
-      setChatAutoSummaryLastEnd(Math.max(0, incoming.chatAutoSummaryLastEnd || 0));
-    });
+messagesRef.current = incoming.messages;
+setChatHistorySummary(incoming.chatHistorySummary || '');
+setReadingPrefixSummaryByBookId(incoming.readingPrefixSummaryByBookId || {});
+setChatSummaryCards(incoming.chatSummaryCards || []);
+// === 修复：同步时也从卡片推算进度，避免被旧值覆盖 ===
+const syncCardMaxEnd = incoming.chatSummaryCards && incoming.chatSummaryCards.length > 0
+  ? Math.max(...incoming.chatSummaryCards.map(card => card.end || 0))
+  : 0;
+setChatAutoSummaryLastEnd(Math.max(syncCardMaxEnd, incoming.chatAutoSummaryLastEnd || 0));
+// === 修复结束 ===
 
     const offGenerationStatus = onGenerationStatusChanged((detail) => {
       if (detail.conversationKey !== conversationKey) return;
