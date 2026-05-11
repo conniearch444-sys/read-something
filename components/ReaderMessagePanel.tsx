@@ -2065,11 +2065,17 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
     setChatHistorySummary(bucket.chatHistorySummary || '');
     setReadingPrefixSummaryByBookId(bucket.readingPrefixSummaryByBookId || {});
     setChatSummaryCards(bucket.chatSummaryCards || []);
-    setChatAutoSummaryLastEnd(
-      readerMoreFeature.autoChatSummaryEnabled
-        ? Math.max(0, bucket.messages.length)
-        : Math.max(0, bucket.chatAutoSummaryLastEnd || 0)
-    );
+    // === 修复：从已有总结合卡片推算稳健的进度底线 ===
+const summaryCardMaxEnd = bucket.chatSummaryCards && bucket.chatSummaryCards.length > 0
+  ? Math.max(...bucket.chatSummaryCards.map(card => card.end || 0))
+  : 0;
+const safeBaseEnd = Math.max(summaryCardMaxEnd, bucket.chatAutoSummaryLastEnd || 0);
+setChatAutoSummaryLastEnd(
+  readerMoreFeature.autoChatSummaryEnabled
+    ? Math.max(0, bucket.messages.length)
+    : Math.max(0, safeBaseEnd)
+);
+// === 修复结束 ===
     setActiveGenerationMode(status.isLoading ? status.mode : null);
     setInputText('');
     setQuotedMessageId(null);
