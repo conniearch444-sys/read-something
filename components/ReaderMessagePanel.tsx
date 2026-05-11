@@ -2072,7 +2072,7 @@ const summaryCardMaxEnd = bucket.chatSummaryCards && bucket.chatSummaryCards.len
 const safeBaseEnd = Math.max(summaryCardMaxEnd, bucket.chatAutoSummaryLastEnd || 0);
 setChatAutoSummaryLastEnd(
   readerMoreFeature.autoChatSummaryEnabled
-    ? .messages.length)
+    ? Math.max(safeBaseEnd, messages.length)
     : Math.max(0, safeBaseEnd)
 );
 // === 修复结束 ===
