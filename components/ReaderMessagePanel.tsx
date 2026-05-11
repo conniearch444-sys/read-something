@@ -1500,7 +1500,7 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
     const enabled = readerMoreFeature.autoChatSummaryEnabled;
     if (enabled && !prevAutoChatSummaryEnabledRef.current) {
       const baseline = Math.max(0, messagesRef.current.length);
-      setChatAutoSummaryLastEnd(baseline);
+      setChatAutoSummaryLastEnd(prev => Math.max(prev, baseline));
     }
     prevAutoChatSummaryEnabledRef.current = enabled;
   }, [readerMoreFeature.autoChatSummaryEnabled, conversationKey]);
