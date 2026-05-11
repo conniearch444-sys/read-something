@@ -2075,11 +2075,14 @@ const summaryCardMaxEnd = bucket.chatSummaryCards && bucket.chatSummaryCards.len
   ? Math.max(...bucket.chatSummaryCards.map(card => card.end || 0))
   : 0;
 const safeBaseEnd = Math.max(summaryCardMaxEnd, bucket.chatAutoSummaryLastEnd || 0);
+const bucketMessages = bucket.messages || [];
+const bucketCards = bucket.chatSummaryCards || [];
+
 setChatAutoSummaryLastEnd((prev) => {
-  const cardMax = chatSummaryCards?.length ? Math.max(...chatSummaryCards.map(c => c.end || 0)) : 0;
+  const cardMax = bucketCards.length ? Math.max(...bucketCards.map(c => c.end || 0)) : 0;
   const baseFromStorage = bucket.chatAutoSummaryLastEnd || 0;
   const candidate = readerMoreFeature.autoChatSummaryEnabled
-    ? Math.max(cardMax, baseFromStorage, messages.length)
+    ? Math.max(cardMax, baseFromStorage, bucketMessages.length)
     : Math.max(prev, cardMax, baseFromStorage);
   return Math.max(prev, candidate);
 });
