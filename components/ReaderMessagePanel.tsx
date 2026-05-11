@@ -1497,15 +1497,6 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
   }, [conversationKey, isConversationProfileValid]);
 
   useEffect(() => {
-    const enabled = readerMoreFeature.autoChatSummaryEnabled;
-    if (enabled && !prevAutoChatSummaryEnabledRef.current) {
-      const baseline = Math.max(0, messagesRef.current.length);
-      setChatAutoSummaryLastEnd(prev => Math.max(prev, baseline));
-    }
-    prevAutoChatSummaryEnabledRef.current = enabled;
-  }, [readerMoreFeature.autoChatSummaryEnabled, conversationKey]);
-
-  useEffect(() => {
     if (readerMoreFeature.autoChatSummaryEnabled) return;
     setSummaryTaskQueue((prev) =>
       prev.filter(
