@@ -1549,19 +1549,24 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
     const triggerCount = normalizeLooseInt(readerMoreFeature.autoChatSummaryTriggerCount);
     if (triggerCount <= 0) return;
     const total = messages.length;
-    let cursor = Math.max(0, chatAutoSummaryLastEndRef.current);
-    while (total - cursor >= triggerCount) {
-      const start = cursor + 1;
-      const end = cursor + triggerCount;
-      queueSummaryTask({
-        kind: 'chat',
-        trigger: 'auto',
-        start,
-        end,
-        conversationKey,
-      });
-      cursor = end;
-    }
+let cursor = Math.max(0, chatAutoSummaryLastEndRef.current);
+// 额外保护：用当前聊天总结卡片的最大 end 值兜底，防止进度落后
+if (chatSummaryCardsRef.current?.length) {
+  const cardMax = Math.max(...chatSummaryCardsRef.current.map(c => c.end || 0));
+  cursor = Math.max(cursor, cardMax);
+}
+while (total - cursor >= triggerCount) {
+  const start = cursor + 1;
+  const end = cursor + triggerCount;
+  queueSummaryTask({
+    kind: 'chat',
+    trigger: 'auto',
+    start,
+    end,
+    conversationKey,
+  });
+  cursor = end;
+}
   }, [
     isConversationHydrated,
     isConversationProfileValid,
@@ -2070,11 +2075,14 @@ const summaryCardMaxEnd = bucket.chatSummaryCards && bucket.chatSummaryCards.len
   ? Math.max(...bucket.chatSummaryCards.map(card => card.end || 0))
   : 0;
 const safeBaseEnd = Math.max(summaryCardMaxEnd, bucket.chatAutoSummaryLastEnd || 0);
-setChatAutoSummaryLastEnd(
-  readerMoreFeature.autoChatSummaryEnabled
-    ? Math.max(safeBaseEnd, messages.length)
-    : Math.max(0, safeBaseEnd)
-);
+setChatAutoSummaryLastEnd((prev) => {
+  const cardMax = chatSummaryCards?.length ? Math.max(...chatSummaryCards.map(c => c.end || 0)) : 0;
+  const baseFromStorage = bucket.chatAutoSummaryLastEnd || 0;
+  const candidate = readerMoreFeature.autoChatSummaryEnabled
+    ? Math.max(cardMax, baseFromStorage, messages.length)
+    : Math.max(prev, cardMax, baseFromStorage);
+  return Math.max(prev, candidate);
+});
 // === 修复结束 ===
     setActiveGenerationMode(status.isLoading ? status.mode : null);
     setInputText('');
