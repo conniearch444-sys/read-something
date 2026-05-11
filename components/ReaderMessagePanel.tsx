@@ -2100,7 +2100,12 @@ setChatAutoSummaryLastEnd(
         const baseline = Math.max(0, normalizeLooseInt(getLatestReadingPosition()?.globalCharOffset || 0));
         setBookAutoSummaryLastEnd(baseline);
       } else {
-        setBookAutoSummaryLastEnd(Math.max(0, content?.bookAutoSummaryLastEnd || 0));
+        const cardMaxEnd = bookSummaryCards.length > 0
+  ? Math.max(...bookSummaryCards.map(c => c.end || 0))
+  : 0;
+setBookAutoSummaryLastEnd(prev =>
+  Math.max(prev, cardMaxEnd, content?.bookAutoSummaryLastEnd || 0)
+);
       }
       setIsBookSummaryHydrated(true);
     })();
@@ -2280,7 +2285,11 @@ setChatSummaryCards(incoming.chatSummaryCards || []);
 const syncCardMaxEnd = incoming.chatSummaryCards && incoming.chatSummaryCards.length > 0
   ? Math.max(...incoming.chatSummaryCards.map(card => card.end || 0))
   : 0;
-setChatAutoSummaryLastEnd(Math.max(syncCardMaxEnd, incoming.chatAutoSummaryLastEnd || 0));
+setChatAutoSummaryLastEnd(prev =>
+  readerMoreFeature.autoChatSummaryEnabled
+    ? Math.max(prev, Math.max(safeBaseEnd, messages.length))
+    : Math.max(prev, 0, safeBaseEnd)
+);
 // === 修复结束 ===
 
     const offGenerationStatus = onGenerationStatusChanged((detail) => {
