@@ -488,16 +488,33 @@ export const restoreAppArchivePayload = async (raw: unknown): Promise<AppArchive
     await saveImageBlobByRef(imageRef, blob);
   }
 
+  // Save cloud sync keys before wiping localStorage
+  const preserveKeys = ['app_cloud_token', 'app_cloud_sync_version', 'app_cloud_last_upload'];
+  const preserved: Record<string, string | null> = {};
+  for (const key of preserveKeys) {
+    preserved[key] = localStorage.getItem(key);
+  }
+
   const removableKeys: string[] = [];
   for (let index = 0; index < localStorage.length; index += 1) {
     const key = localStorage.key(index);
     if (!key || !isArchiveLocalStorageKey(key)) continue;
+    if (preserveKeys.includes(key)) continue;
     removableKeys.push(key);
   }
   removableKeys.forEach((key) => localStorage.removeItem(key));
   Object.entries(archive.localStorage).forEach(([key, value]) => {
-    localStorage.setItem(key, value);
+    if (!preserveKeys.includes(key)) {
+      localStorage.setItem(key, value);
+    }
   });
+
+  // Restore cloud sync keys
+  for (const key of preserveKeys) {
+    if (preserved[key] !== null) {
+      localStorage.setItem(key, preserved[key]!);
+    }
+  }
 
   return archive;
 };
