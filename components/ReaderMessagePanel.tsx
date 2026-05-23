@@ -506,6 +506,7 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
   onTtsResumeFromSaved,
   ttsExportChapterOptions,
   onTtsExportAudiobook,
+  shelfBookTitles,
 }) => {
   const [isAiPanelOpen, setIsAiPanelOpen] = useState(true);
   const [isAiFabOpening, setIsAiFabOpening] = useState(false);
@@ -2812,7 +2813,7 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
         conversationKey: requestConversationKey,
         sourceMessages,
         apiConfig,
-        shelfBookTitles: props.shelfBookTitles,
+        shelfBookTitles,
         userRealName,
         userNickname,
         userDescription,
