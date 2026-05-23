@@ -1533,6 +1533,7 @@ const App: React.FC = () => {
           replyBubbleMax: appSettings.readerMore.feature.replyBubbleMax,
           allowEmptyPending: true,
           ragContext,
+          shelfBookTitles: books.map(b => b.title).filter(Boolean),
         });
         if (!isLoopActive()) return;
         if (result.status !== 'ok') return;

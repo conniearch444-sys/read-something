@@ -11,7 +11,7 @@ import {
     finishConversationGeneration,
     GenerationMode,
     readConversationBucket,
-    saveCrossBookMemory,
+    autoUpdateBookProfileFromCards,
 } from './readerChatRuntime';
 
 export interface ReadingContextSnapshot {
@@ -85,6 +85,7 @@ interface RunConversationGenerationParams {
   replyBubbleMin?: number;
   replyBubbleMax?: number;
   ragContext?: string;
+  shelfBookTitles?: string[];
 }
 
 type RunGenerationSkipReason =
@@ -782,6 +783,7 @@ interface BuildAiPromptParams {
   replyBubbleMin: number;
   replyBubbleMax: number;
   ragContext?: string;
+  shelfBookTitles?: string[];
 }
 
 interface PromptLineItem {
@@ -885,6 +887,18 @@ const buildAiPromptLineItems = (params: BuildAiPromptParams): PromptLineItem[] =
   pushPromptLine(lines, 'otherInstructions', '</identity>');
   pushPromptLine(lines, 'otherInstructions', '');
   pushPromptLine(lines, 'otherInstructions', buildCrossBookMemoryText(characterRealName));
+  if (params.shelfBookTitles && params.shelfBookTitles.length > 0) {
+    const currentBook = params.activeBookTitle || '';
+    const otherBooks = params.shelfBookTitles.filter(t => t !== currentBook);
+    if (otherBooks.length > 0) {
+      pushPromptLine(lines, 'otherInstructions', '');
+      pushPromptLine(lines, 'otherInstructions', '<bookshelf>');
+      pushPromptLine(lines, 'otherInstructions', '【用户书架上的其他书】');
+      otherBooks.forEach((title, i) => pushPromptLine(lines, 'otherInstructions', (i + 1) + '. 《' + title + '》'));
+      pushPromptLine(lines, 'otherInstructions', '你之前可能和用户一起读过这些书，可以自然地在聊天中提及。');
+      pushPromptLine(lines, 'otherInstructions', '</bookshelf>');
+    }
+  }
   pushPromptLine(lines, 'otherInstructions', '<char_profile>');
   pushPromptLine(lines, 'worldBook', formatWorldBookSection(characterWorldBookEntries.before, '【以下是补充信息】', characterRealName, userRealName));
   pushPromptLine(lines, 'characterPersona', '【你是谁】');
@@ -1373,6 +1387,7 @@ export const runConversationGeneration = async (
       replyBubbleMin: resolvedReplyBubbleMin,
       replyBubbleMax: resolvedReplyBubbleMax,
       ragContext,
+      shelfBookTitles: params.shelfBookTitles,
     });
     console.groupCollapsed(`[AI Prompt:${mode}] ${new Date().toLocaleTimeString()}`);
     console.log(prompt);
@@ -1450,16 +1465,14 @@ export const runConversationGeneration = async (
     }
     const bucket = readConversationBucket(conversationKey);
 if (bucket && bucket.chatSummaryCards.length > 0) {
-  const latestCard = bucket.chatSummaryCards[bucket.chatSummaryCards.length - 1];
-  saveCrossBookMemory(
+
+  autoUpdateBookProfileFromCards(
+    activeBookId || '',
+    activeBookTitle || '',
     bucket.characterName || characterRealName,
-    latestCard.content,
-    activeBookId || undefined,
-    latestCard.id,
+    bucket.chatSummaryCards,
   );
 }
     finishConversationGeneration(conversationKey, requestId, 'completed');
   }
 };
-
-

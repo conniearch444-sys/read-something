@@ -107,6 +107,7 @@ interface ReaderMessagePanelProps {
     zipFileName: string;
     skippedReasons: string[];
   }>;
+  shelfBookTitles?: string[];
 }
 
 interface ContextMenuState {
@@ -2811,6 +2812,7 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
         conversationKey: requestConversationKey,
         sourceMessages,
         apiConfig,
+        shelfBookTitles: props.shelfBookTitles,
         userRealName,
         userNickname,
         userDescription,

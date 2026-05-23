@@ -5310,6 +5310,7 @@ const Reader: React.FC<ReaderProps> = ({
         onTtsResumeFromSaved={handleTtsResumeFromSaved}
         ttsExportChapterOptions={ttsExportChapterOptions}
         onTtsExportAudiobook={handleTtsExportAudiobook}
+        shelfBookTitles={books.map(b => b.title).filter(Boolean)}
       />
     </div>
   );

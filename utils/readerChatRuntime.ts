@@ -897,18 +897,85 @@ export const detachMemoriesFromBook = (bookId: string) => {
   writeAllMemories(all);
 };
 
-// 生成用于注入AI提示词的记忆文本
+// ===== 书本级浓缩记忆档案 =====
+
+const BOOK_PROFILES_KEY = 'book_memory_profiles_v1';
+
+export interface BookMemoryProfile {
+  bookId: string;
+  bookTitle: string;
+  characterName: string;
+  points: string[];  // 3-5 个关键记忆点
+  updatedAt: number;
+}
+
+const readBookProfiles = (): BookMemoryProfile[] => {
+  try {
+    const raw = localStorage.getItem(BOOK_PROFILES_KEY);
+    return raw ? JSON.parse(raw) as BookMemoryProfile[] : [];
+  } catch { return []; }
+};
+
+const writeBookProfiles = (profiles: BookMemoryProfile[]) => {
+  try { localStorage.setItem(BOOK_PROFILES_KEY, JSON.stringify(profiles)); } catch {}
+};
+
+// 保存或更新一本书的浓缩记忆档案
+export const upsertBookProfile = (
+  bookId: string,
+  bookTitle: string,
+  characterName: string,
+  points: string[],
+) => {
+  const profiles = readBookProfiles();
+  const idx = profiles.findIndex(p => p.bookId === bookId && p.characterName === characterName);
+  const profile: BookMemoryProfile = { bookId, bookTitle, characterName, points, updatedAt: Date.now() };
+  if (idx >= 0) {
+    profiles[idx] = profile;
+  } else {
+    profiles.push(profile);
+    // 最多保留50本书的记忆
+    if (profiles.length > 50) profiles.shift();
+  }
+  writeBookProfiles(profiles);
+};
+
+// 在chatSummaryCards更新后自动更新书本档案
+export const autoUpdateBookProfileFromCards = (
+  bookId: string,
+  bookTitle: string,
+  characterName: string,
+  cards: ReaderSummaryCard[],
+) => {
+  if (cards.length === 0) return;
+  // 取最近5张卡片的内容作为记忆点
+  const points = cards.slice(-5).map(c => c.content).filter(Boolean);
+  if (points.length === 0) return;
+  upsertBookProfile(bookId, bookTitle, characterName, points);
+};
+
+// 获取某个角色读过所有书的浓缩档案
+export const getBookProfilesForCharacter = (characterName: string): BookMemoryProfile[] => {
+  return readBookProfiles()
+    .filter(p => p.characterName === characterName)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+};
+
+// 生成用于注入AI提示词的记忆文本（书本级浓缩档案 + 最近细节）
 export const buildCrossBookMemoryText = (characterName: string, currentBookId?: string | null): string => {
-  const memories = getCrossBookMemories(characterName);
-  if (memories.length === 0) return '';
-  // 仅展示最近20条，避免token爆炸
-  const recent = memories.slice(0, 20);
-  let text = '\n\n——你与用户之前共读其他书籍的记忆——\n';
-  recent.forEach(m => {
-    const tag = m.sourceBookId && m.sourceBookId !== (currentBookId || '') ? '' : '';
-    text += `• ${m.summary}\n`;
+  const profiles = getBookProfilesForCharacter(characterName);
+  const otherProfiles = profiles.filter(p => p.bookId !== (currentBookId || ''));
+  if (otherProfiles.length === 0) return '';
+
+  let text = '\n\n——你与用户之前共读过的书——\n';
+  // 展示最近5本书的浓缩档案
+  otherProfiles.slice(0, 5).forEach(p => {
+    text += `\n《${p.bookTitle}》的记忆：\n`;
+    p.points.forEach((pt, i) => {
+      text += `  ${i + 1}. ${pt}\n`;
+    });
   });
-  text += '——请在不突兀的情况下，自然地引用这些过往的阅读经历，但不要反复提起——';
+  text += '\n——请在聊天中不突兀地引用这些记忆，但不要变成复读机——';
   return text;
 };
 
