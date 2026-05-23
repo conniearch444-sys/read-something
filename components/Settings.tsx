@@ -45,6 +45,8 @@ import {
   uploadArchive,
   downloadAndRestoreArchive,
   getLocalSyncVersion,
+  startAutoSync,
+  syncChatToHermes,
   SyncStatus,
 } from '../utils/cloudSync';
 import { runCleanup, CleanupResult } from '../utils/storageCleanup';
@@ -410,6 +412,7 @@ const Settings: React.FC<SettingsProps> = ({
       if (configured && isLoggedIn()) {
         const status = await getServerSyncStatus();
         setCloudStatus(status);
+        startAutoSync();
       }
     } catch {
       // Server not reachable, ignore silently
@@ -432,6 +435,8 @@ const Settings: React.FC<SettingsProps> = ({
       setCloudPassphrase('');
       setCloudMessage('密码设置成功！');
       setCloudMessageType('success');
+      startAutoSync();
+      syncChatToHermes().catch(() => {});
       const status = await getServerSyncStatus();
       setCloudStatus(status);
     } catch (err: any) {
@@ -457,6 +462,8 @@ const Settings: React.FC<SettingsProps> = ({
       setCloudPassphrase('');
       setCloudMessage('登录成功！');
       setCloudMessageType('success');
+      startAutoSync();
+      syncChatToHermes().catch(() => {});
       const status = await getServerSyncStatus();
       setCloudStatus(status);
     } catch (err: any) {
