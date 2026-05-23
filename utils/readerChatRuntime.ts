@@ -24,6 +24,7 @@ export interface ChatBubble {
   quote?: ChatQuotePayload;
   generationId?: string;
   editedAt?: number;
+  imageUrls?: string[];
 }
 
 export interface ReaderChatBucket {
@@ -301,8 +302,12 @@ const normalizeChatBubble = (value: unknown): ChatBubble | null => {
   const source = value as Partial<ChatBubble>;
   if (source.sender !== 'user' && source.sender !== 'character') return null;
   const content = typeof source.content === 'string' ? compactText(source.content) : '';
+  const imageUrls = Array.isArray(source.imageUrls)
+    ? source.imageUrls.filter((u): u is string => typeof u === 'string' && u.trim().length > 0)
+    : undefined;
   const timestamp = Number(source.timestamp);
-  if (!content || !Number.isFinite(timestamp)) return null;
+  if (!content && (!imageUrls || imageUrls.length === 0)) return null;
+  if (!Number.isFinite(timestamp)) return null;
   const quote = normalizeQuotePayload(source.quote, timestamp);
   const migratedPromptRecord =
     typeof source.promptRecord === 'string'
@@ -322,6 +327,7 @@ const normalizeChatBubble = (value: unknown): ChatBubble | null => {
     quote,
     generationId: typeof source.generationId === 'string' ? source.generationId : undefined,
     editedAt: Number.isFinite(Number(source.editedAt)) ? Number(source.editedAt) : undefined,
+    imageUrls: imageUrls && imageUrls.length > 0 ? imageUrls : undefined,
   };
 };
 

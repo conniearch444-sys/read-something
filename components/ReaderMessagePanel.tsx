@@ -10,6 +10,7 @@ import {
   Star,
   Trash2,
   X,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { ApiConfig, ApiPreset, AppSettings, Book, Chapter, FavoriteQuote, RagApiConfigResolver, ReaderBookState, ReaderSummaryCard, ReaderHighlightRange, ReaderPositionState, TtsConfig, TtsPlaybackState } from '../types';
 import type { TtsPreset } from '../types';
@@ -510,6 +511,8 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
   const [messages, setMessages] = useState<ChatBubble[]>([]);
   const [inputText, setInputText] = useState('');
+  const [pendingImages, setPendingImages] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeGenerationMode, setActiveGenerationMode] = useState<GenerationMode | null>(null);
   const [isManualPreflightLoading, setIsManualPreflightLoading] = useState(false);
   const [toast, setToast] = useState<{ text: string; type: 'error' | 'info' } | null>(null);
@@ -2900,6 +2903,34 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
     }
   };
 
+  const handlePickImages = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFilesSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const readers: Promise<string>[] = [];
+    for (let i = 0; i < Math.min(files.length, 5); i++) {
+      const file = files[i];
+      if (!file.type.startsWith('image/')) continue;
+      readers.push(new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      }));
+    }
+    Promise.all(readers).then((urls) => {
+      setPendingImages((prev) => [...prev, ...urls].slice(0, 5));
+    });
+    // Reset so the same file can be re-selected
+    e.target.value = '';
+  };
+
+  const handleRemovePendingImage = (index: number) => {
+    setPendingImages((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleQueueUserBubble = () => {
     if (isManualBusy || isDeleteMode) return;
     if (!isConversationProfileValid) {
@@ -2907,7 +2938,8 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
       return;
     }
     const text = compactText(inputText);
-    if (!text) return;
+    const images = [...pendingImages];
+    if (!text && images.length === 0) return;
 
     const now = Date.now();
     const quotePayload =
@@ -2929,10 +2961,12 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
       sentToAi: false,
       quote: quotePayload,
       promptRecord: buildUserPromptRecord(userRealName, text, now, quotePayload),
+      imageUrls: images.length > 0 ? images : undefined,
     };
 
     setMessages((prev) => [...prev, newMessage]);
     setInputText('');
+    setPendingImages([]);
     setQuotedMessageId(null);
     setContextMenu(null);
   };
@@ -3332,6 +3366,19 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
                             <div className="opacity-80 break-all">{message.quote.content}</div>
                           </div>
                         )}
+                        {message.imageUrls && message.imageUrls.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mb-2">
+                            {message.imageUrls.map((url, idx) => (
+                              <img
+                                key={idx}
+                                src={url}
+                                alt=""
+                                className="max-w-[200px] max-h-[200px] rounded-xl object-cover cursor-pointer"
+                                onClick={() => window.open(url, '_blank')}
+                              />
+                            ))}
+                          </div>
+                        )}
                         <div className="break-words">{message.content}</div>
                       </div>
                     </div>
@@ -3400,7 +3447,49 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
               </div>
             )}
 
+            {pendingImages.length > 0 && (
+              <div className="flex gap-2 mb-2 flex-wrap">
+                {pendingImages.map((url, idx) => (
+                  <div key={idx} className="relative w-16 h-16 rounded-xl overflow-hidden">
+                    <img src={url} alt="" className="w-full h-full object-cover" />
+                    <button
+                      onClick={() => handleRemovePendingImage(idx)}
+                      className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-rose-500 text-white flex items-center justify-center"
+                    >
+                      <X size={10} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleFilesSelected}
+              className="hidden"
+            />
+
             <div className={`rm-input-wrap flex items-center gap-3 rounded-full px-2 py-2 ${isDarkMode ? 'bg-[#1a202c] shadow-inner' : 'neu-pressed'}`}>
+              {!editingMessageId && (
+                <button
+                  onClick={handlePickImages}
+                  disabled={isManualBusy || isDeleteMode}
+                  className={`p-2 rounded-full transition-all ${
+                    isManualBusy || isDeleteMode
+                      ? 'text-slate-400 opacity-50'
+                      : isDarkMode
+                        ? 'text-slate-300 hover:text-sky-400 active:scale-95'
+                        : 'text-slate-500 hover:text-sky-500 active:scale-95'
+                  }`}
+                  aria-label="上传图片"
+                  title="上传图片"
+                >
+                  <ImageIcon size={20} />
+                </button>
+              )}
               <input
                 type="text"
                 value={inputText}
