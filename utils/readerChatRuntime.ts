@@ -962,18 +962,54 @@ export const getBookProfilesForCharacter = (characterName: string): BookMemoryPr
 };
 
 // 删书时将书本档案浓缩为1条综合记忆点，返回浓缩文本用于提示
-export const condenseBookProfileOnDelete = (bookId: string): string | null => {
+// 优先使用 BookMemoryProfile，若不存在则回退到跨书记忆
+export const condenseBookProfileOnDelete = (bookId: string, bookTitle?: string): string | null => {
+  const title = bookTitle || '未知书籍';
+
+  // 第一优先：使用 BookMemoryProfile 浓缩
   const profiles = readBookProfiles();
   const profile = profiles.find(p => p.bookId === bookId);
-  if (!profile) return null;
-  const condensed = profile.points.length >= 1
-    ? `《${profile.bookTitle}》的记忆：${profile.points.join('；')}`
-    : `读过《${profile.bookTitle}》`;
-  profile.points = [condensed];
-  profile.updatedAt = Date.now();
-  writeBookProfiles(profiles);
-  return condensed;
-};
+  if (profile) {
+    const condensed = profile.points.length >= 1
+      ? `《${profile.bookTitle}》的记忆：${profile.points.join('；')}`
+      : `读过《${profile.bookTitle}》`;
+    profile.points = [condensed];
+    profile.updatedAt = Date.now();
+    writeBookProfiles(profiles);
+    return condensed;
+  }
+
+  // 回退：从跨书记忆中浓缩
+  const allMemories = readAllMemories();
+  const bookMemories = allMemories.filter(m => m.sourceBookId === bookId);
+  if (bookMemories.length > 0) {
+    const characterName = bookMemories[0].characterName;
+    const summaries = bookMemories
+      .slice(-20) // 最多取最近20条
+      .map(m => m.summary)
+      .filter(Boolean);
+    if (summaries.length === 0) return null;
+
+    const condensed = `《${title}》的记忆：${summaries.join('；')}`;
+
+    // 移除原有跨书记忆，替换为1条浓缩版
+    const remaining = allMemories.filter(m => m.sourceBookId !== bookId);
+    remaining.push({
+      id: `condensed-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      characterName,
+      summary: condensed,
+      updatedAt: Date.now(),
+    });
+    writeAllMemories(remaining);
+
+    // 同时创建 BookMemoryProfile 以便后续查漏补缺
+    upsertBookProfile(bookId, title, characterName, [condensed]);
+
+    return condensed;
+  }
+
+  return null;
+};;
 
 // 生成用于注入AI提示词的记忆文本
 // 最近5本：完整档案（所有记忆点），更早的书：仅1条记忆点

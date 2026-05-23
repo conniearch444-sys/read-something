@@ -2122,7 +2122,7 @@ const App: React.FC = () => {
     deleteBookContent(bookId).catch(err => console.error('Failed to delete deleted-book text content:', err));
     deleteImageRefsBatch(imageRefs, 'Failed to delete deleted-book image');
     detachMemoriesFromBook(bookId);
-    const condensed = condenseBookProfileOnDelete(bookId);
+    const condensed = condenseBookProfileOnDelete(bookId, targetBook?.title);
     if (condensed && targetBook) {
       alert(`已为《${targetBook.title}》浓缩跨书记忆：\n\n${condensed}`);
     }
