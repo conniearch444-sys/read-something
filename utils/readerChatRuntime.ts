@@ -961,13 +961,16 @@ export const getBookProfilesForCharacter = (characterName: string): BookMemoryPr
     .sort((a, b) => b.updatedAt - a.updatedAt);
 };
 
-// 删书时将书本档案浓缩为1条记忆点
+// 删书时将书本档案浓缩为1条综合记忆点
 export const condenseBookProfileOnDelete = (bookId: string) => {
   const profiles = readBookProfiles();
   const profile = profiles.find(p => p.bookId === bookId);
-  if (!profile || profile.points.length <= 1) return;
-  // 保留第一条作为浓缩记忆
-  profile.points = [profile.points[0]];
+  if (!profile) return;
+  // 将所有记忆点拼接为一个综合浓缩记忆
+  const condensed = profile.points.length > 1
+    ? `《${profile.bookTitle}》的记忆：${profile.points.join('；')}`
+    : profile.points[0] || `读过《${profile.bookTitle}》`;
+  profile.points = [condensed];
   profile.updatedAt = Date.now();
   writeBookProfiles(profiles);
 };
