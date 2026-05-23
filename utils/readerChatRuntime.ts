@@ -961,20 +961,46 @@ export const getBookProfilesForCharacter = (characterName: string): BookMemoryPr
     .sort((a, b) => b.updatedAt - a.updatedAt);
 };
 
-// 生成用于注入AI提示词的记忆文本（书本级浓缩档案 + 最近细节）
+// 删书时将书本档案浓缩为1条记忆点
+export const condenseBookProfileOnDelete = (bookId: string) => {
+  const profiles = readBookProfiles();
+  const profile = profiles.find(p => p.bookId === bookId);
+  if (!profile || profile.points.length <= 1) return;
+  // 保留第一条作为浓缩记忆
+  profile.points = [profile.points[0]];
+  profile.updatedAt = Date.now();
+  writeBookProfiles(profiles);
+};
+
+// 生成用于注入AI提示词的记忆文本
+// 最近5本：完整档案（所有记忆点），更早的书：仅1条记忆点
 export const buildCrossBookMemoryText = (characterName: string, currentBookId?: string | null): string => {
   const profiles = getBookProfilesForCharacter(characterName);
   const otherProfiles = profiles.filter(p => p.bookId !== (currentBookId || ''));
   if (otherProfiles.length === 0) return '';
 
+  const recent = otherProfiles.slice(0, 5);
+  const older = otherProfiles.slice(5);
+
   let text = '\n\n——你与用户之前共读过的书——\n';
-  // 展示最近5本书的浓缩档案
-  otherProfiles.slice(0, 5).forEach(p => {
+
+  // 最近5本：完整档案
+  recent.forEach(p => {
     text += `\n《${p.bookTitle}》的记忆：\n`;
     p.points.forEach((pt, i) => {
       text += `  ${i + 1}. ${pt}\n`;
     });
   });
+
+  // 更早的书：仅1条记忆
+  if (older.length > 0) {
+    text += '\n——更早之前读过的书（简要）——\n';
+    older.forEach(p => {
+      const oneLiner = p.points[0] || '';
+      text += `• 《${p.bookTitle}》${oneLiner ? '：' + oneLiner : ''}\n`;
+    });
+  }
+
   text += '\n——请在聊天中不突兀地引用这些记忆，但不要变成复读机——';
   return text;
 };
