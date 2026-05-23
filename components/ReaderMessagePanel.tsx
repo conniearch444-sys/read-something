@@ -1549,7 +1549,7 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
     const triggerCount = normalizeLooseInt(readerMoreFeature.autoChatSummaryTriggerCount);
     if (triggerCount <= 0) return;
     const total = messages.length;
-    let cursor = Math.max(0, chatAutoSummaryLastEndRef.current);
+    let cursor = Math.max(0, chatAutoSummaryLastEnd);
     while (total - cursor >= triggerCount) {
       const start = cursor + 1;
       const end = cursor + triggerCount;
@@ -1568,6 +1568,7 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
     readerMoreFeature.autoChatSummaryEnabled,
     readerMoreFeature.autoChatSummaryTriggerCount,
     messages.length,
+    chatAutoSummaryLastEnd,
     queueSummaryTask,
     conversationKey,
   ]);
