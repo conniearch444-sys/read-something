@@ -1497,6 +1497,15 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
   }, [conversationKey, isConversationProfileValid]);
 
   useEffect(() => {
+    const enabled = readerMoreFeature.autoChatSummaryEnabled;
+    if (enabled && !prevAutoChatSummaryEnabledRef.current) {
+      const baseline = Math.max(0, messagesRef.current.length);
+      setChatAutoSummaryLastEnd(baseline);
+    }
+    prevAutoChatSummaryEnabledRef.current = enabled;
+  }, [readerMoreFeature.autoChatSummaryEnabled, conversationKey]);
+
+  useEffect(() => {
     if (readerMoreFeature.autoChatSummaryEnabled) return;
     setSummaryTaskQueue((prev) =>
       prev.filter(
@@ -1540,33 +1549,25 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
     const triggerCount = normalizeLooseInt(readerMoreFeature.autoChatSummaryTriggerCount);
     if (triggerCount <= 0) return;
     const total = messages.length;
-let cursor = Math.max(0, chatAutoSummaryLastEnd);
-// 额外保护：用当前聊天总结卡片的最大 end 值兜底，防止进度落后
-if (chatSummaryCards.length) {
-  const cardMax = Math.max(...chatSummaryCards.map(c => c.end || 0));
-  cursor = Math.max(cursor, cardMax);
-}
-if(true){alert("[DIAG] total:"+total+" cursor:"+cursor+" chatASLE:"+chatAutoSummaryLastEnd+" cards:"+chatSummaryCards.length+" triggerCnt:"+normalizeLooseInt(readerMoreFeature.autoChatSummaryTriggerCount));}
-while (total - cursor >= triggerCount) {
-  const start = cursor + 1;
-  const end = cursor + triggerCount;
-  queueSummaryTask({
-    kind: 'chat',
-    trigger: 'auto',
-    start,
-    end,
-    conversationKey,
-  });
-  cursor = end;
-}
+    let cursor = Math.max(0, chatAutoSummaryLastEndRef.current);
+    while (total - cursor >= triggerCount) {
+      const start = cursor + 1;
+      const end = cursor + triggerCount;
+      queueSummaryTask({
+        kind: 'chat',
+        trigger: 'auto',
+        start,
+        end,
+        conversationKey,
+      });
+      cursor = end;
+    }
   }, [
     isConversationHydrated,
     isConversationProfileValid,
     readerMoreFeature.autoChatSummaryEnabled,
     readerMoreFeature.autoChatSummaryTriggerCount,
     messages.length,
-    chatAutoSummaryLastEnd,
-    chatSummaryCards.length,
     queueSummaryTask,
     conversationKey,
   ]);
@@ -2064,22 +2065,11 @@ while (total - cursor >= triggerCount) {
     setChatHistorySummary(bucket.chatHistorySummary || '');
     setReadingPrefixSummaryByBookId(bucket.readingPrefixSummaryByBookId || {});
     setChatSummaryCards(bucket.chatSummaryCards || []);
-    // === 修复：从已有总结合卡片推算稳健的进度底线 ===
-const summaryCardMaxEnd = bucket.chatSummaryCards && bucket.chatSummaryCards.length > 0
-  ? Math.max(...bucket.chatSummaryCards.map(card => card.end || 0))
-  : 0;
-const safeBaseEnd = Math.max(summaryCardMaxEnd, bucket.chatAutoSummaryLastEnd || 0);
-const bucketMessages = bucket.messages || [];
-const bucketCards = bucket.chatSummaryCards || [];
-
-const cardMax = bucketCards.length ? Math.max(...bucketCards.map(c => c.end || 0)) : 0;
-const baseFromStorage = bucket.chatAutoSummaryLastEnd || 0;
-const resolvedChatAutoSummaryLastEnd = readerMoreFeature.autoChatSummaryEnabled
-  ? Math.max(cardMax, baseFromStorage, bucketMessages.length)
-  : Math.max(cardMax, baseFromStorage);
-setChatAutoSummaryLastEnd(resolvedChatAutoSummaryLastEnd);
-chatAutoSummaryLastEndRef.current = resolvedChatAutoSummaryLastEnd;
-// === 修复结束 ===
+    setChatAutoSummaryLastEnd(
+      readerMoreFeature.autoChatSummaryEnabled
+        ? Math.max(0, bucket.messages.length)
+        : Math.max(0, bucket.chatAutoSummaryLastEnd || 0)
+    );
     setActiveGenerationMode(status.isLoading ? status.mode : null);
     setInputText('');
     setQuotedMessageId(null);
@@ -2104,12 +2094,7 @@ chatAutoSummaryLastEndRef.current = resolvedChatAutoSummaryLastEnd;
         const baseline = Math.max(0, normalizeLooseInt(getLatestReadingPosition()?.globalCharOffset || 0));
         setBookAutoSummaryLastEnd(baseline);
       } else {
-        const cardMaxEnd = bookSummaryCards.length > 0
-  ? Math.max(...bookSummaryCards.map(c => c.end || 0))
-  : 0;
-setBookAutoSummaryLastEnd(prev =>
-  Math.max(prev, cardMaxEnd, content?.bookAutoSummaryLastEnd || 0)
-);
+        setBookAutoSummaryLastEnd(Math.max(0, content?.bookAutoSummaryLastEnd || 0));
       }
       setIsBookSummaryHydrated(true);
     })();
@@ -2281,20 +2266,12 @@ setBookAutoSummaryLastEnd(prev =>
       }
 
       setMessages(incoming.messages);
-messagesRef.current = incoming.messages;
-setChatHistorySummary(incoming.chatHistorySummary || '');
-setReadingPrefixSummaryByBookId(incoming.readingPrefixSummaryByBookId || {});
-setChatSummaryCards(incoming.chatSummaryCards || []);
-// === 修复：同步时也从卡片推算进度，避免被旧值覆盖 ===
-const syncCardMaxEnd = incoming.chatSummaryCards && incoming.chatSummaryCards.length > 0
-  ? Math.max(...incoming.chatSummaryCards.map(card => card.end || 0))
-  : 0;
-const resolvedSyncAutoSummaryLastEnd = readerMoreFeature.autoChatSummaryEnabled
-  ? Math.max(chatAutoSummaryLastEndRef.current, syncCardMaxEnd, safeBaseEnd, messages.length)
-  : Math.max(chatAutoSummaryLastEndRef.current, syncCardMaxEnd, safeBaseEnd);
-setChatAutoSummaryLastEnd(resolvedSyncAutoSummaryLastEnd);
-chatAutoSummaryLastEndRef.current = resolvedSyncAutoSummaryLastEnd;
-// === 修复结束 ===
+      messagesRef.current = incoming.messages;
+      setChatHistorySummary(incoming.chatHistorySummary || '');
+      setReadingPrefixSummaryByBookId(incoming.readingPrefixSummaryByBookId || {});
+      setChatSummaryCards(incoming.chatSummaryCards || []);
+      setChatAutoSummaryLastEnd(Math.max(0, incoming.chatAutoSummaryLastEnd || 0));
+    });
 
     const offGenerationStatus = onGenerationStatusChanged((detail) => {
       if (detail.conversationKey !== conversationKey) return;
