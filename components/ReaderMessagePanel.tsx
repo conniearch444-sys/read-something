@@ -2960,7 +2960,7 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
       timestamp: now,
       sentToAi: false,
       quote: quotePayload,
-      promptRecord: buildUserPromptRecord(userRealName, text, now, quotePayload),
+      promptRecord: buildUserPromptRecord(userRealName, text, now, quotePayload, images.length),
       imageUrls: images.length > 0 ? images : undefined,
     };
 
