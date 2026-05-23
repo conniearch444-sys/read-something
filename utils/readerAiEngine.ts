@@ -638,25 +638,54 @@ const parseResponseError = async (response: Response, fallback: string) => {
   }
 };
 
-export const callAiModel = async (prompt: string, apiConfig: ApiConfig, signal?: AbortSignal) => {
+const extractImageBase64 = (dataUrl: string) => {
+  const match = dataUrl.match(/^data:(image\/\w+);base64,(.+)$/);
+  if (!match) return null;
+  return { mimeType: match[1], data: match[2] };
+};
+
+export const callAiModel = async (
+  prompt: string,
+  apiConfig: ApiConfig,
+  signal?: AbortSignal,
+  images?: string[],
+) => {
   const provider = apiConfig.provider;
   const endpoint = (apiConfig.endpoint || '').trim().replace(/\/+$/, '');
   const apiKey = (apiConfig.apiKey || '').trim();
   const model = (apiConfig.model || '').trim();
+  const hasImages = images && images.length > 0;
 
   throwIfAborted(signal);
 
   if (provider === 'GEMINI') {
     const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-    });
+    if (hasImages) {
+      const parts: Array<{text?: string; inlineData?: {mimeType: string; data: string}}> = [];
+      for (const img of images) {
+        const info = extractImageBase64(img);
+        if (info) parts.push({ inlineData: { mimeType: info.mimeType, data: info.data } });
+      }
+      parts.push({ text: prompt });
+      const response = await ai.models.generateContent({ model, contents: [{ parts }] });
+      throwIfAborted(signal);
+      return response.text || '';
+    }
+    const response = await ai.models.generateContent({ model, contents: prompt });
     throwIfAborted(signal);
     return response.text || '';
   }
 
   if (provider === 'CLAUDE') {
+    let content: string | Array<{type: string; text?: string; source?: {type: string; media_type: string; data: string}}> = prompt;
+    if (hasImages) {
+      content = [];
+      for (const img of images) {
+        const info = extractImageBase64(img);
+        if (info) content.push({ type: 'image', source: { type: 'base64', media_type: info.mimeType, data: info.data } });
+      }
+      content.push({ type: 'text', text: prompt });
+    }
     const response = await fetch(`${endpoint}/v1/messages`, {
       method: 'POST',
       headers: {
@@ -664,11 +693,7 @@ export const callAiModel = async (prompt: string, apiConfig: ApiConfig, signal?:
         'anthropic-version': '2023-06-01',
         'content-type': 'application/json',
       },
-      body: JSON.stringify({
-        model,
-        max_tokens: 800,
-        messages: [{ role: 'user', content: prompt }],
-      }),
+      body: JSON.stringify({ model, max_tokens: 800, messages: [{ role: 'user', content }] }),
       signal,
     });
     if (!response.ok) {
@@ -680,6 +705,12 @@ export const callAiModel = async (prompt: string, apiConfig: ApiConfig, signal?:
     return data.content?.[0]?.text || '';
   }
 
+  // OpenAI-compatible: DEEPSEEK, OPENAI, CUSTOM, etc.
+  let userContent: string | Array<{type: string; text?: string; image_url?: {url: string}}> = prompt;
+  if (hasImages) {
+    userContent = images.map((img) => ({ type: 'image_url', image_url: { url: img } }));
+    userContent.push({ type: 'text', text: prompt });
+  }
   const response = await fetch(`${endpoint}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -688,7 +719,7 @@ export const callAiModel = async (prompt: string, apiConfig: ApiConfig, signal?:
     },
     body: JSON.stringify({
       model,
-      messages: [{ role: 'user', content: prompt }],
+      messages: [{ role: 'user', content: userContent }],
       temperature: 0.85,
     }),
     signal,
@@ -1347,7 +1378,10 @@ export const runConversationGeneration = async (
     console.log(prompt);
     console.groupEnd();
 
-    const rawReply = await callAiModel(prompt, apiConfig, innerSignal);
+    const pendingImages = pendingMessages
+      .flatMap((m) => m.imageUrls || [])
+      .filter(Boolean);
+    const rawReply = await callAiModel(prompt, apiConfig, innerSignal, pendingImages.length > 0 ? pendingImages : undefined);
     throwIfAborted(innerSignal);
     const parsedReply = parseAiReplyPayload(rawReply);
     const bubbleLines = normalizeAiBubbleLines(

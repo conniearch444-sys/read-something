@@ -216,7 +216,7 @@ export const buildUserPromptRecord = (
   imageCount?: number,
 ) => {
   const messageText = compactText(content);
-  const imageText = imageCount && imageCount > 0 ? ` [发送了${imageCount}张图片，请根据文字描述来回应]` : '';
+  const imageText = imageCount && imageCount > 0 ? ` [用户发送了${imageCount}张图片，图片已直接展示在上方，请直接看图回应]` : '';
   const quoteText = quote
     ? ` [引用:发送者=${quote.senderName};时间=${formatTimestampMinute(quote.timestamp)};内容=${compactText(quote.content)}]`
     : '';
