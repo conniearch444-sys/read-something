@@ -12,6 +12,7 @@ import {
   Palette,
   Loader2,
   X,
+  Trash2,
   Cloud,
   ImageIcon,
   Link as LinkIcon,
@@ -1109,38 +1110,35 @@ const Settings: React.FC<SettingsProps> = ({
 
            <div className="w-full h-[1px] bg-slate-300/20 mx-2" />
 
-           {/* Cleanup Button */}
-           <div className="px-1 mt-3">
-             <button
-               type="button"
-               onClick={handleCleanup}
-               disabled={cleanupRunning}
-               className={`w-full ${cardClass} py-3 rounded-xl flex items-center justify-center gap-2 text-sm font-bold text-amber-500 hover:text-amber-400 transition-colors disabled:opacity-40 active:scale-[0.98]`}
-             >
-               {cleanupRunning ? (
-                 <Loader2 size={18} className="animate-spin" />
-               ) : (
-                 <span>🧹</span>
-               )}
-               <span>{cleanupRunning ? '清理中...' : '清理残留数据'}</span>
-             </button>
-             {cleanupResult && (
-               <div className={`mt-2 p-3 rounded-xl text-xs ${isDarkMode ? 'bg-emerald-500/10 text-emerald-300' : 'bg-emerald-50 text-emerald-600'}`}>
-                 已清理：{cleanupResult.orphanedBooks.length} 本残留书籍、
-                 {cleanupResult.orphanedImages} 张孤立图片、
-                 {cleanupResult.orphanedTtsBooks.length} 组TTS音频、
-                 {cleanupResult.orphanedRagBooks.length} 组RAG索引，
-                 释放约 {(cleanupResult.freedBytes / 1024 / 1024).toFixed(1)} MB
-               </div>
-             )}
-             {cleanupError && (
-               <div className={`mt-2 p-3 rounded-xl text-xs ${isDarkMode ? 'bg-rose-500/10 text-rose-300' : 'bg-rose-50 text-rose-500'}`}>
-                 {cleanupError}
-               </div>
-             )}
+           {/* Cleanup */}
+           <div
+             onClick={() => { if (!cleanupRunning) handleCleanup(); }}
+             className="p-3 rounded-xl flex items-center justify-between cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 active:scale-[0.98] transition-all"
+           >
+              <div className="flex items-center gap-4">
+                <div className={`${sectionIconClass} text-amber-400`}>
+                  {cleanupRunning ? <Loader2 size={22} className="animate-spin" /> : <Trash2 size={22} />}
+                </div>
+                <div>
+                  <span className={`font-bold ${headingClass}`}>
+                    {cleanupRunning ? '清理中...' : '清理残留数据'}
+                  </span>
+                  {cleanupResult && (
+                    <span className="block text-xs text-slate-400 mt-0.5">
+                      已释放 {(cleanupResult.freedBytes / 1024 / 1024).toFixed(1)} MB
+                    </span>
+                  )}
+                  {cleanupError && (
+                    <span className="block text-xs text-rose-400 mt-0.5">{cleanupError}</span>
+                  )}
+                </div>
+              </div>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-slate-400 ${isDarkMode ? cardClass : 'neu-flat'}`}>
+                <ChevronRight size={16} />
+              </div>
            </div>
 
-           <div className="w-full h-[1px] bg-slate-300/20 mx-2 mt-3" />
+           <div className="w-full h-[1px] bg-slate-300/20 mx-2" />
 
            {/* Appearance Preferences */}
            <div 
