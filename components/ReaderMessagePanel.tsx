@@ -1546,7 +1546,7 @@ if (chatSummaryCards.length) {
   const cardMax = Math.max(...chatSummaryCards.map(c => c.end || 0));
   cursor = Math.max(cursor, cardMax);
 }
-console.log('[DIAG-AUTO]', JSON.stringify({ total: messages.length, cursor, chatAutoSummaryLastEnd, cardCount: chatSummaryCards.length, triggerCount: normalizeLooseInt(readerMoreFeature.autoChatSummaryTriggerCount), willFire: total - cursor >= triggerCount }));
+if(true){alert("[DIAG] total:"+total+" cursor:"+cursor+" chatASLE:"+chatAutoSummaryLastEnd+" cards:"+chatSummaryCards.length+" triggerCnt:"+normalizeLooseInt(readerMoreFeature.autoChatSummaryTriggerCount));}
 while (total - cursor >= triggerCount) {
   const start = cursor + 1;
   const end = cursor + triggerCount;
