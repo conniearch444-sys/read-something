@@ -117,88 +117,16 @@ export async function downloadAndRestoreArchive(): Promise<number> {
 
 // ─── Auto Sync ────────────────────────────────────────────────
 
-const HERMES_WEBHOOK_URL = '/read-something/hermes-sync';
-const HERMES_WEBHOOK_SECRET = '0e06aefc3bf032fa0214d5e5794b1f1dff378c1027d9655bb2dde93f989fd0cc';
-
-async function hmacSign(secret: string, body: string): Promise<string> {
-  const enc = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    'raw', enc.encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
-  );
-  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(body));
-  return 'sha256=' + Array.from(new Uint8Array(sig))
-    .map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-export async function syncChatToHermes(targetChar = '沈季白'): Promise<number> {
-  /** Extract conversations with targetChar and push to hermes webhook. */
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open('app_reader_chat_history_db_v1', 1);
-    req.onsuccess = async () => {
-      const db = req.result;
-      const tx = db.transaction('chat_history_store', 'readonly');
-      const store = tx.objectStore('chat_history_store');
-      const getReq = store.get('chat_store_v1');
-      getReq.onsuccess = async () => {
-        db.close();
-        const chatStore = getReq.result || {};
-        const matched: any[] = [];
-        for (const [key, bucket] of Object.entries(chatStore)) {
-          if (!bucket || typeof bucket !== 'object') continue;
-          const b = bucket as any;
-          const charName = b.characterName || '';
-          const personaName = b.personaName || '';
-          if (!charName.includes(targetChar) && !personaName.includes(targetChar)) continue;
-          const msgs = (b.messages || []).slice(-30);
-          matched.push({
-            conversation_key: key,
-            character: charName,
-            persona: personaName,
-            message_count: msgs.length,
-            messages: msgs.map((m: any) => ({
-              sender: m.sender,
-              content: m.content,
-              time: new Date(m.timestamp).toISOString(),
-            })),
-          });
-        }
-
-        if (matched.length === 0) {
-          resolve(0);
-          return;
-        }
-
-        const payload = {
-          source: 'read-something',
-          synced_at: new Date().toISOString(),
-          conversations: matched,
-        };
-
-        try {
-          const body = JSON.stringify(payload);
-          const sig = await hmacSign(HERMES_WEBHOOK_SECRET, body);
-          const resp = await fetch(HERMES_WEBHOOK_URL, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Hub-Signature-256': sig,
-            },
-            body,
-          });
-          if (!resp.ok) {
-            const err = await resp.json().catch(() => ({}));
-            throw new Error((err as any).error || `HTTP ${resp.status}`);
-          }
-          resolve(matched.length);
-        } catch (e: any) {
-          reject(e);
-        }
-      };
-      getReq.onerror = () => { db.close(); reject(new Error('读取聊天记录失败')); };
-    };
-    req.onerror = () => reject(new Error('打开数据库失败'));
-  });
+export async function syncChatToHermes(): Promise<number> {
+  /** Tell the server to push chat history from the latest archive to hermes.
+   *  Uses the server-side API to avoid browser crypto.subtle (requires HTTPS). */
+  if (!isLoggedIn()) return 0;
+  try {
+    const data = await api('/sync/chat-to-hermes', { method: 'POST' });
+    return (data as any).conversation_count || 1;
+  } catch {
+    return 0; // best-effort, don't break the auto-upload flow
+  }
 }
 
 async function autoUpload(): Promise<void> {
