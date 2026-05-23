@@ -2069,14 +2069,13 @@ const safeBaseEnd = Math.max(summaryCardMaxEnd, bucket.chatAutoSummaryLastEnd ||
 const bucketMessages = bucket.messages || [];
 const bucketCards = bucket.chatSummaryCards || [];
 
-setChatAutoSummaryLastEnd((prev) => {
-  const cardMax = bucketCards.length ? Math.max(...bucketCards.map(c => c.end || 0)) : 0;
-  const baseFromStorage = bucket.chatAutoSummaryLastEnd || 0;
-  const candidate = readerMoreFeature.autoChatSummaryEnabled
-    ? Math.max(cardMax, baseFromStorage, bucketMessages.length)
-    : Math.max(prev, cardMax, baseFromStorage);
-  return Math.max(prev, candidate);
-});
+const cardMax = bucketCards.length ? Math.max(...bucketCards.map(c => c.end || 0)) : 0;
+const baseFromStorage = bucket.chatAutoSummaryLastEnd || 0;
+const resolvedChatAutoSummaryLastEnd = readerMoreFeature.autoChatSummaryEnabled
+  ? Math.max(cardMax, baseFromStorage, bucketMessages.length)
+  : Math.max(cardMax, baseFromStorage);
+setChatAutoSummaryLastEnd(resolvedChatAutoSummaryLastEnd);
+chatAutoSummaryLastEndRef.current = resolvedChatAutoSummaryLastEnd;
 // === 修复结束 ===
     setActiveGenerationMode(status.isLoading ? status.mode : null);
     setInputText('');
@@ -2287,11 +2286,11 @@ setChatSummaryCards(incoming.chatSummaryCards || []);
 const syncCardMaxEnd = incoming.chatSummaryCards && incoming.chatSummaryCards.length > 0
   ? Math.max(...incoming.chatSummaryCards.map(card => card.end || 0))
   : 0;
-setChatAutoSummaryLastEnd(prev =>
-  readerMoreFeature.autoChatSummaryEnabled
-    ? Math.max(prev, Math.max(safeBaseEnd, messages.length))
-    : Math.max(prev, 0, safeBaseEnd)
-);
+const resolvedSyncAutoSummaryLastEnd = readerMoreFeature.autoChatSummaryEnabled
+  ? Math.max(chatAutoSummaryLastEndRef.current, syncCardMaxEnd, safeBaseEnd, messages.length)
+  : Math.max(chatAutoSummaryLastEndRef.current, syncCardMaxEnd, safeBaseEnd);
+setChatAutoSummaryLastEnd(resolvedSyncAutoSummaryLastEnd);
+chatAutoSummaryLastEndRef.current = resolvedSyncAutoSummaryLastEnd;
 // === 修复结束 ===
 
     const offGenerationStatus = onGenerationStatusChanged((detail) => {
