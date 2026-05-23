@@ -5,10 +5,13 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
-      base: '/read-something/',
+      base: '/read/',
       server: {
         port: 3000,
         host: '0.0.0.0',
+        proxy: {
+          '/read/api': 'http://127.0.0.1:5001',
+        },
       },
       optimizeDeps: {
         // Keep mobi parser out of pre-bundling so alias patches are applied consistently.

@@ -13,6 +13,7 @@ import { buildConversationKey, readConversationBucket, persistConversationBucket
 import { BUILT_IN_TUTORIAL_BOOK_ID, BUILT_IN_TUTORIAL_VERSION, createBuiltInTutorialBook, migrateTutorialImages, isBuiltInBook, markTutorialUnread, clearTutorialUnread } from './utils/builtInTutorialBook';
 import { buildCharacterWorldBookSections, buildReadingContextSnapshot, runConversationGeneration } from './utils/readerAiEngine';
 import { DEFAULT_TTS_CONFIG } from './utils/ttsEngine';
+import { isLoggedIn, startAutoSync, stopAutoSync, initCloudAutoRestore } from './utils/cloudSync';
 import {
   DEFAULT_NEUMORPHISM_BUBBLE_CSS_PRESET_ID,
   DEFAULT_NEUMORPHISM_BUBBLE_CSS,
@@ -786,6 +787,18 @@ const App: React.FC = () => {
   // --- EFFECTS FOR PERSISTENCE ---
 
   useEffect(() => { safeSetStorageItem('app_dark_mode', JSON.stringify(isDarkMode)); }, [isDarkMode]);
+
+  // Auto cloud sync
+  useEffect(() => {
+    if (!isLoggedIn()) return;
+    // Check if need to restore from cloud on startup
+    initCloudAutoRestore().then((restored) => {
+      if (restored) window.location.reload();
+    });
+    startAutoSync();
+    return () => { stopAutoSync(); };
+  }, []);
+
   useEffect(() => {
     dailyReadingMsByDateRef.current = dailyReadingMsByDate;
   }, [dailyReadingMsByDate]);

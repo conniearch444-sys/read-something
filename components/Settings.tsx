@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { 
-  Settings as SettingsIcon, 
-  Book, 
-  ChevronRight, 
-  Key, 
-  HardDrive, 
+import {
+  Settings as SettingsIcon,
+  Book,
+  ChevronRight,
+  Key,
+  HardDrive,
   UserCircle,
   ArrowLeft,
   Download,
@@ -12,6 +12,7 @@ import {
   Palette,
   Loader2,
   X,
+  Cloud,
   ImageIcon,
   Link as LinkIcon,
   Volume2
@@ -33,6 +34,19 @@ import {
   formatBytes,
   restoreAppArchivePayload,
 } from '../utils/appArchive';
+import {
+  isCloudConfigured,
+  setupPassphrase,
+  loginWithPassphrase,
+  isLoggedIn,
+  logout,
+  getServerSyncStatus,
+  uploadArchive,
+  downloadAndRestoreArchive,
+  getLocalSyncVersion,
+  SyncStatus,
+} from '../utils/cloudSync';
+import { runCleanup, CleanupResult } from '../utils/storageCleanup';
 
 interface SettingsProps {
   isDarkMode: boolean;
@@ -160,6 +174,20 @@ const Settings: React.FC<SettingsProps> = ({
   const [archiveExporting, setArchiveExporting] = useState(false);
   const [archiveImporting, setArchiveImporting] = useState(false);
 
+  // Cloud sync states
+  const [cloudConfigured, setCloudConfigured] = useState<boolean | null>(null);
+  const [cloudLoggedIn, setCloudLoggedIn] = useState(isLoggedIn());
+  const [cloudSyncing, setCloudSyncing] = useState(false);
+  const [cloudPassphrase, setCloudPassphrase] = useState('');
+  const [cloudStatus, setCloudStatus] = useState<SyncStatus | null>(null);
+  const [cloudMessage, setCloudMessage] = useState('');
+  const [cloudMessageType, setCloudMessageType] = useState<'success' | 'error' | ''>('');
+
+  // Storage cleanup states
+  const [cleanupRunning, setCleanupRunning] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState<CleanupResult | null>(null);
+  const [cleanupError, setCleanupError] = useState('');
+
   // Theme Classes
   const theme: ThemeClasses = {
     containerClass: isDarkMode ? 'bg-[#2d3748] text-slate-200' : 'neu-bg text-slate-600',
@@ -184,6 +212,15 @@ const Settings: React.FC<SettingsProps> = ({
       if (viewTransitionUnlockTimerRef.current) window.clearTimeout(viewTransitionUnlockTimerRef.current);
       if (storageDonutAnimRef.current) window.cancelAnimationFrame(storageDonutAnimRef.current);
     };
+  }, []);
+
+  // Init cloud sync check on mount
+  useEffect(() => {
+    if (isLoggedIn()) {
+      initCloudCheck();
+    } else {
+      isCloudConfigured().then(setCloudConfigured).catch(() => {});
+    }
   }, []);
 
   const switchView = (view: SettingsView) => {
@@ -361,6 +398,129 @@ const Settings: React.FC<SettingsProps> = ({
       alert(`导入失败：${message}`);
     } finally {
       setArchiveImporting(false);
+    }
+  };
+
+  // --- Cloud Sync Handlers ---
+  const initCloudCheck = async () => {
+    try {
+      const configured = await isCloudConfigured();
+      setCloudConfigured(configured);
+      if (configured && isLoggedIn()) {
+        const status = await getServerSyncStatus();
+        setCloudStatus(status);
+      }
+    } catch {
+      // Server not reachable, ignore silently
+    }
+  };
+
+  const handleCloudSetup = async () => {
+    const pass = cloudPassphrase.trim();
+    if (pass.length < 6) {
+      setCloudMessage('密码至少需要6个字符');
+      setCloudMessageType('error');
+      return;
+    }
+    setCloudSyncing(true);
+    setCloudMessage('');
+    try {
+      await setupPassphrase(pass);
+      setCloudLoggedIn(true);
+      setCloudConfigured(true);
+      setCloudPassphrase('');
+      setCloudMessage('密码设置成功！');
+      setCloudMessageType('success');
+      const status = await getServerSyncStatus();
+      setCloudStatus(status);
+    } catch (err: any) {
+      setCloudMessage(err.message || '设置失败');
+      setCloudMessageType('error');
+    } finally {
+      setCloudSyncing(false);
+    }
+  };
+
+  const handleCloudLogin = async () => {
+    const pass = cloudPassphrase.trim();
+    if (!pass) {
+      setCloudMessage('请输入密码');
+      setCloudMessageType('error');
+      return;
+    }
+    setCloudSyncing(true);
+    setCloudMessage('');
+    try {
+      await loginWithPassphrase(pass);
+      setCloudLoggedIn(true);
+      setCloudPassphrase('');
+      setCloudMessage('登录成功！');
+      setCloudMessageType('success');
+      const status = await getServerSyncStatus();
+      setCloudStatus(status);
+    } catch (err: any) {
+      setCloudMessage(err.message || '登录失败');
+      setCloudMessageType('error');
+    } finally {
+      setCloudSyncing(false);
+    }
+  };
+
+  const handleCloudUpload = async () => {
+    if (!confirm('将上传当前所有数据到云端，确定继续吗？')) return;
+    setCloudSyncing(true);
+    setCloudMessage('');
+    try {
+      const version = await uploadArchive();
+      setCloudMessage(`上传成功！（版本 ${version}）`);
+      setCloudMessageType('success');
+      const status = await getServerSyncStatus();
+      setCloudStatus(status);
+    } catch (err: any) {
+      setCloudMessage(err.message || '上传失败');
+      setCloudMessageType('error');
+    } finally {
+      setCloudSyncing(false);
+    }
+  };
+
+  const handleCloudDownload = async () => {
+    if (!confirm('从云端下载将覆盖当前设备上的所有数据，确定继续吗？')) return;
+    setCloudSyncing(true);
+    setCloudMessage('');
+    try {
+      const version = await downloadAndRestoreArchive();
+      setCloudMessage(`下载成功！（版本 ${version}），页面即将刷新...`);
+      setCloudMessageType('success');
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (err: any) {
+      setCloudMessage(err.message || '下载失败');
+      setCloudMessageType('error');
+    } finally {
+      setCloudSyncing(false);
+    }
+  };
+
+  const handleCloudLogout = () => {
+    logout();
+    setCloudLoggedIn(false);
+    setCloudStatus(null);
+    setCloudMessage('');
+  };
+
+  // --- Storage Cleanup ---
+  const handleCleanup = async () => {
+    if (!confirm('将清理所有已删除书籍残留的封面图片、TTS音频、RAG索引等数据，确定继续吗？')) return;
+    setCleanupRunning(true);
+    setCleanupError('');
+    setCleanupResult(null);
+    try {
+      const result = await runCleanup();
+      setCleanupResult(result);
+    } catch (err: any) {
+      setCleanupError(err.message || '清理失败');
+    } finally {
+      setCleanupRunning(false);
     }
   };
 
@@ -949,6 +1109,39 @@ const Settings: React.FC<SettingsProps> = ({
 
            <div className="w-full h-[1px] bg-slate-300/20 mx-2" />
 
+           {/* Cleanup Button */}
+           <div className="px-1 mt-3">
+             <button
+               type="button"
+               onClick={handleCleanup}
+               disabled={cleanupRunning}
+               className={`w-full ${cardClass} py-3 rounded-xl flex items-center justify-center gap-2 text-sm font-bold text-amber-500 hover:text-amber-400 transition-colors disabled:opacity-40 active:scale-[0.98]`}
+             >
+               {cleanupRunning ? (
+                 <Loader2 size={18} className="animate-spin" />
+               ) : (
+                 <span>🧹</span>
+               )}
+               <span>{cleanupRunning ? '清理中...' : '清理残留数据'}</span>
+             </button>
+             {cleanupResult && (
+               <div className={`mt-2 p-3 rounded-xl text-xs ${isDarkMode ? 'bg-emerald-500/10 text-emerald-300' : 'bg-emerald-50 text-emerald-600'}`}>
+                 已清理：{cleanupResult.orphanedBooks.length} 本残留书籍、
+                 {cleanupResult.orphanedImages} 张孤立图片、
+                 {cleanupResult.orphanedTtsBooks.length} 组TTS音频、
+                 {cleanupResult.orphanedRagBooks.length} 组RAG索引，
+                 释放约 {(cleanupResult.freedBytes / 1024 / 1024).toFixed(1)} MB
+               </div>
+             )}
+             {cleanupError && (
+               <div className={`mt-2 p-3 rounded-xl text-xs ${isDarkMode ? 'bg-rose-500/10 text-rose-300' : 'bg-rose-50 text-rose-500'}`}>
+                 {cleanupError}
+               </div>
+             )}
+           </div>
+
+           <div className="w-full h-[1px] bg-slate-300/20 mx-2 mt-3" />
+
            {/* Appearance Preferences */}
            <div 
              onClick={() => navigateTo('APPEARANCE')}
@@ -994,6 +1187,140 @@ const Settings: React.FC<SettingsProps> = ({
           className="hidden"
           onChange={(e) => { void handleImportArchiveFileSelected(e); }}
         />
+      </div>
+
+      {/* Cloud Sync Section */}
+      <div className="mt-6 px-1">
+        <div className="flex items-center gap-3 mb-3">
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isDarkMode ? 'bg-sky-500/20 text-sky-300' : 'bg-sky-100 text-sky-600'}`}>
+            <Cloud size={16} />
+          </div>
+          <span className={`text-sm font-bold ${headingClass}`}>云端同步</span>
+          {cloudStatus && (
+            <span className="text-xs text-slate-400 ml-auto">v{cloudStatus.latest_version}</span>
+          )}
+        </div>
+
+        {cloudConfigured === null && cloudLoggedIn && (
+          <button
+            type="button"
+            onClick={initCloudCheck}
+            className={`w-full ${cardClass} py-3 rounded-xl text-sm text-slate-500`}
+          >
+            检查云端状态...
+          </button>
+        )}
+
+        {/* Not configured — show setup */}
+        {cloudConfigured === false && !cloudLoggedIn && (
+          <div className="space-y-3">
+            <p className="text-xs text-slate-400">设置密码后即可将数据同步到云端</p>
+            <input
+              type="password"
+              value={cloudPassphrase}
+              onChange={(e) => setCloudPassphrase(e.target.value)}
+              placeholder="设置一个密码（至少6位）"
+              className={`w-full ${inputClass} py-2 px-4 rounded-xl text-sm`}
+              disabled={cloudSyncing}
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={handleCloudSetup}
+                disabled={cloudSyncing || cloudPassphrase.trim().length < 6}
+                className={`${cardClass} py-3 rounded-xl text-sm font-bold text-sky-500 hover:text-sky-400 transition-colors disabled:opacity-40`}
+              >
+                {cloudSyncing ? '设置中...' : '设置密码'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Configured but not logged in — show login */}
+        {cloudConfigured === true && !cloudLoggedIn && (
+          <div className="space-y-3">
+            <p className="text-xs text-slate-400">输入密码登录云端</p>
+            <input
+              type="password"
+              value={cloudPassphrase}
+              onChange={(e) => setCloudPassphrase(e.target.value)}
+              placeholder="输入你的密码"
+              className={`w-full ${inputClass} py-2 px-4 rounded-xl text-sm`}
+              disabled={cloudSyncing}
+            />
+            <button
+              type="button"
+              onClick={handleCloudLogin}
+              disabled={cloudSyncing || !cloudPassphrase.trim()}
+              className={`w-full ${cardClass} py-3 rounded-xl text-sm font-bold text-sky-500 hover:text-sky-400 transition-colors disabled:opacity-40`}
+            >
+              {cloudSyncing ? '登录中...' : '登录云端'}
+            </button>
+          </div>
+        )}
+
+        {/* Logged in — show sync buttons */}
+        {cloudLoggedIn && (
+          <div className="space-y-3">
+            <div className={`${cardClass} rounded-xl p-3`}>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-400">本地版本</span>
+                <span className="font-bold text-slate-500">{getLocalSyncVersion()}</span>
+              </div>
+              <div className="flex items-center justify-between text-xs mt-1">
+                <span className="text-slate-400">云端版本</span>
+                <span className="font-bold text-sky-500">{cloudStatus?.latest_version ?? '—'}</span>
+              </div>
+              {cloudStatus && cloudStatus.payload_size_bytes > 0 && (
+                <div className="flex items-center justify-between text-xs mt-1">
+                  <span className="text-slate-400">存档大小</span>
+                  <span className="text-slate-400">
+                    {(cloudStatus.payload_size_bytes / 1024 / 1024).toFixed(1)} MB
+                  </span>
+                </div>
+              )}
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <button
+                type="button"
+                onClick={handleCloudUpload}
+                disabled={cloudSyncing}
+                className={`${cardClass} py-3 rounded-xl flex flex-col items-center gap-1 text-slate-500 hover:text-sky-400 transition-colors disabled:opacity-40 active:scale-[0.98]`}
+              >
+                {cloudSyncing ? <Loader2 size={20} className="animate-spin" /> : <Upload size={20} />}
+                <span className="text-xs font-bold">上传</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleCloudDownload}
+                disabled={cloudSyncing}
+                className={`${cardClass} py-3 rounded-xl flex flex-col items-center gap-1 text-slate-500 hover:text-sky-400 transition-colors disabled:opacity-40 active:scale-[0.98]`}
+              >
+                {cloudSyncing ? <Loader2 size={20} className="animate-spin" /> : <Download size={20} />}
+                <span className="text-xs font-bold">下载</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleCloudLogout}
+                disabled={cloudSyncing}
+                className={`${cardClass} py-3 rounded-xl flex flex-col items-center gap-1 text-slate-500 hover:text-rose-400 transition-colors disabled:opacity-40 active:scale-[0.98]`}
+              >
+                <X size={20} />
+                <span className="text-xs font-bold">退出</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {cloudMessage && (
+          <div className={`mt-3 p-3 rounded-xl text-xs font-bold text-center ${
+            cloudMessageType === 'success'
+              ? 'bg-emerald-50 text-emerald-600'
+              : 'bg-rose-50 text-rose-500'
+          }`}>
+            {cloudMessage}
+          </div>
+        )}
       </div>
     </div>
   );
