@@ -3,7 +3,7 @@ import {
   restoreAppArchivePayload,
 } from './appArchive';
 
-const API_BASE = '/read/api';
+const API_BASE = '/read-something/api';
 const TOKEN_KEY = 'app_cloud_token';
 const VERSION_KEY = 'app_cloud_sync_version';
 const LAST_UPLOAD_KEY = 'app_cloud_last_upload';
