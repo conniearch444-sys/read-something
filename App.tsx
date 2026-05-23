@@ -2254,6 +2254,7 @@ const App: React.FC = () => {
             onBack={handleBackToLibrary}
             isDarkMode={isDarkMode}
             activeBook={activeBook}
+            books={books}
             ragIndexingState={activeBook ? (ragWarmupByBookId[activeBook.id] || null) : null}
             appSettings={appSettings}
             setAppSettings={setAppSettings}

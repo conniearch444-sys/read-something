@@ -61,6 +61,7 @@ interface ReaderProps {
   onBack: (snapshot?: ReaderSessionSnapshot) => void;
   isDarkMode: boolean;
   activeBook: Book | null;
+  books?: Book[];
   appSettings: AppSettings;
   setAppSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
   apiConfig: ApiConfig;
@@ -728,6 +729,7 @@ const Reader: React.FC<ReaderProps> = ({
   onBack,
   isDarkMode,
   activeBook,
+  books,
   appSettings,
   setAppSettings,
   apiConfig,
@@ -5275,6 +5277,7 @@ const Reader: React.FC<ReaderProps> = ({
         safeAreaTop={Math.max(0, safeAreaTop)}
         safeAreaBottom={Math.max(0, safeAreaBottom)}
         activeBook={activeBook}
+        shelfBookTitles={books ? books.map(b => b.title).filter(Boolean) : undefined}
         appSettings={appSettings}
         setAppSettings={setAppSettings}
         aiProactiveUnderlineEnabled={appSettings.aiProactiveUnderlineEnabled}
