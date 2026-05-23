@@ -853,7 +853,7 @@ const buildAiPromptLineItems = (params: BuildAiPromptParams): PromptLineItem[] =
   pushPromptLine(lines, 'otherInstructions', triggerModeRule);
   pushPromptLine(lines, 'otherInstructions', '</identity>');
   pushPromptLine(lines, 'otherInstructions', '');
-  pushPromptLine(lines, 'otherInstructions', buildCrossBookMemoryText(characterRealName));
+  pushPromptLine(lines, 'otherInstructions', buildCrossBookMemoryText(characterRealName, activeBookId));
   pushPromptLine(lines, 'otherInstructions', '<char_profile>');
   pushPromptLine(lines, 'worldBook', formatWorldBookSection(characterWorldBookEntries.before, '【以下是补充信息】', characterRealName, userRealName));
   pushPromptLine(lines, 'characterPersona', '【你是谁】');
@@ -1417,7 +1417,12 @@ export const runConversationGeneration = async (
     const bucket = readConversationBucket(conversationKey);
 if (bucket && bucket.chatSummaryCards.length > 0) {
   const latestCard = bucket.chatSummaryCards[bucket.chatSummaryCards.length - 1];
-  saveCrossBookMemory(bucket.characterName || characterRealName, latestCard.content);
+  saveCrossBookMemory(
+    bucket.characterName || characterRealName,
+    latestCard.content,
+    activeBookId || undefined,
+    latestCard.id,
+  );
 }
     finishConversationGeneration(conversationKey, requestId, 'completed');
   }

@@ -9,7 +9,7 @@ import { AppView, Book, Chapter, ApiConfig, ApiPreset, ApiProvider, AppSettings,
 import { Persona, Character, WorldBookEntry } from './components/settings/types';
 import { deleteImageByRef, migrateDataUrlToImageRef } from './utils/imageStorage';
 import { compactBookForState, deleteBookContent, getBookContent, migrateInlineBookContent, saveBookContent } from './utils/bookContentStorage';
-import { buildConversationKey, readConversationBucket, persistConversationBucket } from './utils/readerChatRuntime';
+import { buildConversationKey, readConversationBucket, persistConversationBucket, detachMemoriesFromBook } from './utils/readerChatRuntime';
 import { BUILT_IN_TUTORIAL_BOOK_ID, BUILT_IN_TUTORIAL_VERSION, createBuiltInTutorialBook, migrateTutorialImages, isBuiltInBook, markTutorialUnread, clearTutorialUnread } from './utils/builtInTutorialBook';
 import { buildCharacterWorldBookSections, buildReadingContextSnapshot, runConversationGeneration } from './utils/readerAiEngine';
 import { DEFAULT_TTS_CONFIG } from './utils/ttsEngine';
@@ -2120,6 +2120,7 @@ const App: React.FC = () => {
 
     deleteBookContent(bookId).catch(err => console.error('Failed to delete deleted-book text content:', err));
     deleteImageRefsBatch(imageRefs, 'Failed to delete deleted-book image');
+    detachMemoriesFromBook(bookId);
 
     setBooks(prev => prev.filter(b => b.id !== bookId));
     setCompletedBookIds(prev => prev.filter(id => id !== bookId));

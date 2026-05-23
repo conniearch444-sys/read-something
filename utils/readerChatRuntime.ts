@@ -764,91 +764,181 @@ export const onGenerationStatusChanged = (listener: (detail: GenerationStatusEve
   return () => window.removeEventListener(GENERATION_STATUS_EVENT, handler);
 };
 
-// ===== 跨书籍全局记忆（新增） =====
+// ===== 跨书籍全局记忆 =====
 
-const CROSS_BOOK_MEMORY_KEY = 'cross_book_memories_v1';
+const CROSS_BOOK_MEMORY_KEY = 'cross_book_memories_v2';
 
 export interface CrossBookMemoryItem {
+  id: string;
   characterName: string;
-  summary: string;   // AI 生成的摘要
+  summary: string;
   updatedAt: number;
+  sourceBookId?: string;   // 可选：来源书籍ID，用于自动同步和删书处理
+  sourceCardId?: string;   // 可选：来源总结卡片ID，用于精确匹配更新
 }
 
-// 获取某个角色的所有跨书记忆
-export const getCrossBookMemories = (characterName: string): CrossBookMemoryItem[] => {
+let crossBookMemoryCache: CrossBookMemoryItem[] | null = null;
+
+const readAllMemories = (): CrossBookMemoryItem[] => {
+  if (crossBookMemoryCache) return crossBookMemoryCache;
   try {
     const raw = localStorage.getItem(CROSS_BOOK_MEMORY_KEY);
-    if (!raw) return [];
-    const all: CrossBookMemoryItem[] = JSON.parse(raw);
-    return all.filter(m => m.characterName === characterName);
+    if (!raw) { crossBookMemoryCache = []; return []; }
+    crossBookMemoryCache = JSON.parse(raw) as CrossBookMemoryItem[];
+    return crossBookMemoryCache;
   } catch {
+    crossBookMemoryCache = [];
     return [];
   }
 };
 
-// 保存一条跨书记忆（由外部调用，如 AI 生成摘要后）
-export const saveCrossBookMemory = (
-  characterName: string,
-  summary: string
-) => {
+const writeAllMemories = (items: CrossBookMemoryItem[]) => {
+  crossBookMemoryCache = items;
   try {
-    const raw = localStorage.getItem(CROSS_BOOK_MEMORY_KEY);
-    const all: CrossBookMemoryItem[] = raw ? JSON.parse(raw) : [];
-    const existing = all.find(m => m.characterName === characterName && m.summary === summary);
-    if (!existing) {
-      all.push({
-        characterName,
-        summary,
-        updatedAt: Date.now(),
-      });
-      // 每个角色最多保留 100 条记忆
-      const filtered = all.filter(m => m.characterName === characterName).slice(-100);
-      const others = all.filter(m => m.characterName !== characterName);
-      localStorage.setItem(CROSS_BOOK_MEMORY_KEY, JSON.stringify([...others, ...filtered]));
-    }
+    localStorage.setItem(CROSS_BOOK_MEMORY_KEY, JSON.stringify(items));
   } catch { /* 静默处理 */ }
 };
 
-// 生成跨书记忆的文本片段，用于注入到系统提示词
-export const buildCrossBookMemoryText = (characterName: string): string => {
+// 迁移旧版数据到新版（v1 → v2）
+const migrateCrossBookMemoryIfNeeded = () => {
+  try {
+    if (localStorage.getItem(CROSS_BOOK_MEMORY_KEY)) return; // 已有v2数据
+    const oldRaw = localStorage.getItem('cross_book_memories_v1');
+    if (!oldRaw) return;
+    const oldItems = JSON.parse(oldRaw) as Array<{characterName: string; summary: string; updatedAt: number}>;
+    const migrated: CrossBookMemoryItem[] = oldItems.map(item => ({
+      id: `legacy-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      characterName: item.characterName,
+      summary: item.summary,
+      updatedAt: item.updatedAt || Date.now(),
+    }));
+    writeAllMemories(migrated);
+    localStorage.removeItem('cross_book_memories_v1');
+  } catch {}
+};
+migrateCrossBookMemoryIfNeeded();
+
+// 获取某个角色的所有跨书记忆
+export const getCrossBookMemories = (characterName: string): CrossBookMemoryItem[] => {
+  return readAllMemories()
+    .filter(m => m.characterName === characterName)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+};
+
+// 获取所有跨书记忆（管理面板用）
+export const getAllCrossBookMemories = (): CrossBookMemoryItem[] => {
+  return readAllMemories().sort((a, b) => b.updatedAt - a.updatedAt);
+};
+
+// 按sourceCardId精确匹配更新，不匹配则新增
+export const saveCrossBookMemory = (
+  characterName: string,
+  summary: string,
+  sourceBookId?: string,
+  sourceCardId?: string,
+) => {
+  try {
+    const all = readAllMemories();
+    // 按sourceCardId精确匹配（引用更新模式）
+    if (sourceCardId) {
+      const idx = all.findIndex(m => m.sourceCardId === sourceCardId);
+      if (idx >= 0) {
+        all[idx] = { ...all[idx], summary, updatedAt: Date.now(), sourceBookId };
+        writeAllMemories(all);
+        return;
+      }
+    }
+    // 新增
+    const id = `mem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    all.push({ id, characterName, summary, updatedAt: Date.now(), sourceBookId, sourceCardId });
+    // 每个角色最多保留100条记忆
+    const forChar = all.filter(m => m.characterName === characterName).slice(-100);
+    const others = all.filter(m => m.characterName !== characterName);
+    writeAllMemories([...others, ...forChar]);
+  } catch { /* 静默处理 */ }
+};
+
+// 编辑记忆文本
+export const editCrossBookMemory = (id: string, newSummary: string) => {
+  const all = readAllMemories();
+  const idx = all.findIndex(m => m.id === id);
+  if (idx < 0) return;
+  all[idx] = { ...all[idx], summary: newSummary, updatedAt: Date.now() };
+  writeAllMemories(all);
+};
+
+// 删除单条记忆
+export const deleteCrossBookMemory = (id: string) => {
+  writeAllMemories(readAllMemories().filter(m => m.id !== id));
+};
+
+// 删除指定书籍的所有记忆（彻底删除）
+export const deleteMemoriesByBook = (bookId: string) => {
+  writeAllMemories(readAllMemories().filter(m => m.sourceBookId !== bookId));
+};
+
+// 书被删除时：取消引用但保留文本快照（防止AI失忆）
+export const detachMemoriesFromBook = (bookId: string) => {
+  const all = readAllMemories();
+  all.forEach(m => {
+    if (m.sourceBookId === bookId) {
+      m.sourceBookId = undefined;
+      m.sourceCardId = undefined;
+    }
+  });
+  writeAllMemories(all);
+};
+
+// 生成用于注入AI提示词的记忆文本
+export const buildCrossBookMemoryText = (characterName: string, currentBookId?: string | null): string => {
   const memories = getCrossBookMemories(characterName);
   if (memories.length === 0) return '';
+  // 仅展示最近20条，避免token爆炸
+  const recent = memories.slice(0, 20);
   let text = '\n\n——你与用户之前共读其他书籍的记忆——\n';
-  memories.forEach(m => {
-  text += `${m.characterName}: ${m.summary}\n`;
-});
-  text += '——请在不突兀的情况下，自然地引用这些过往的阅读经历——';
+  recent.forEach(m => {
+    const tag = m.sourceBookId && m.sourceBookId !== (currentBookId || '') ? '' : '';
+    text += `• ${m.summary}\n`;
+  });
+  text += '——请在不突兀的情况下，自然地引用这些过往的阅读经历，但不要反复提起——';
   return text;
 };
 
-// 页面加载时，自动将旧书的 chatSummaryCards 同步到跨书记忆库
+// 页面加载时，按sourceCardId匹配同步，避免重复
 (async function syncExistingSummariesToCrossBookMemory() {
   try {
-    // 优先从 IndexedDB 读取
     const stored = await getStoredChatHistoryStore();
-    if (stored && Object.keys(stored).length > 0) {
-      const store: ReaderChatStore = normalizeChatStore(stored);
-      Object.values(store).forEach((bucket: ReaderChatBucket) => {
-        if (!bucket || !Array.isArray(bucket.chatSummaryCards)) return;
-        bucket.chatSummaryCards.forEach((card: ReaderSummaryCard) => {
-          if (card && card.content && bucket.characterName) {
-            saveCrossBookMemory(bucket.characterName, card.content);
-          }
-        });
-      });
-    } else {
-      // 回退：从 localStorage 读取旧版数据
+    if (!stored || Object.keys(stored).length === 0) {
+      // 回退：从localStorage读取旧版数据
       const raw = localStorage.getItem(CHAT_HISTORY_STORAGE_KEY);
       if (!raw) return;
-      const store: ReaderChatStore = JSON.parse(raw);
-      Object.values(store).forEach((bucket: ReaderChatBucket) => {
+      const legacyStore: ReaderChatStore = JSON.parse(raw);
+      Object.entries(legacyStore).forEach(([convKey, bucket]) => {
         if (!bucket || !Array.isArray(bucket.chatSummaryCards)) return;
+        const bookId = extractBookIdFromConversationKey(convKey);
         bucket.chatSummaryCards.forEach((card: ReaderSummaryCard) => {
           if (card && card.content && bucket.characterName) {
-            saveCrossBookMemory(bucket.characterName, card.content);
+            saveCrossBookMemory(bucket.characterName, card.content, bookId || undefined, card.id);
           }
         });
       });
+      return;
     }
+    const store: ReaderChatStore = normalizeChatStore(stored);
+    Object.entries(store).forEach(([convKey, bucket]) => {
+      if (!bucket || !Array.isArray(bucket.chatSummaryCards)) return;
+      const bookId = extractBookIdFromConversationKey(convKey);
+      bucket.chatSummaryCards.forEach((card: ReaderSummaryCard) => {
+        if (card && card.content && bucket.characterName) {
+          saveCrossBookMemory(bucket.characterName, card.content, bookId || undefined, card.id);
+        }
+      });
+    });
   } catch {}
 })();
+
+// 从conversationKey中提取bookId
+const extractBookIdFromConversationKey = (key: string): string | null => {
+  const match = key.match(/^book:(.+?)::persona:/);
+  return match && match[1] !== 'none' ? match[1] : null;
+};

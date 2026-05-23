@@ -159,9 +159,10 @@ ${chunks[i]}
           const summaries = await generateSummaries(messages, chunkSize);
           if (summaries.length === 0) { setStatus('错误：AI没有返回有效的摘要'); return; }
           
-          const existingMemories = JSON.parse(localStorage.getItem('cross_book_memories_v1') || '[]');
+          const existingMemories = JSON.parse(localStorage.getItem('cross_book_memories_v2') || '[]');
           summaries.forEach((summary) => {
             existingMemories.push({
+              id: `import-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
               characterName: detectedName,
               summary: `[来自小手机的记忆] ${summary}`,
               updatedAt: Date.now(),
@@ -169,7 +170,7 @@ ${chunks[i]}
           });
           const forThisChar = existingMemories.filter((m: any) => m.characterName === detectedName).slice(-100);
           const forOthers = existingMemories.filter((m: any) => m.characterName !== detectedName);
-          localStorage.setItem('cross_book_memories_v1', JSON.stringify([...forOthers, ...forThisChar]));
+          localStorage.setItem('cross_book_memories_v2', JSON.stringify([...forOthers, ...forThisChar]));
           
           setStatus(`✅ 成功！已为「${detectedName}」存储 ${summaries.length} 条记忆（每段 ${chunkSize} 条对话）。`);
         } catch (apiError) {
@@ -184,7 +185,7 @@ ${chunks[i]}
 
   // 记忆管理器交互逻辑（包含编辑、删除、查看）
   useEffect(() => {
-    const KEY = 'cross_book_memories_v1';
+    const KEY = 'cross_book_memories_v2';
     const listEl = document.getElementById('memory-list');
     const statusEl = document.getElementById('memory-status');
     const refreshBtn = document.getElementById('memory-refresh-btn');
