@@ -1540,10 +1540,10 @@ const ReaderMessagePanel: React.FC<ReaderMessagePanelProps> = ({
     const triggerCount = normalizeLooseInt(readerMoreFeature.autoChatSummaryTriggerCount);
     if (triggerCount <= 0) return;
     const total = messages.length;
-let cursor = Math.max(0, chatAutoSummaryLastEndRef.current);
+let cursor = Math.max(0, chatAutoSummaryLastEnd);
 // 额外保护：用当前聊天总结卡片的最大 end 值兜底，防止进度落后
-if (chatSummaryCardsRef.current?.length) {
-  const cardMax = Math.max(...chatSummaryCardsRef.current.map(c => c.end || 0));
+if (chatSummaryCards.length) {
+  const cardMax = Math.max(...chatSummaryCards.map(c => c.end || 0));
   cursor = Math.max(cursor, cardMax);
 }
 while (total - cursor >= triggerCount) {
@@ -1564,6 +1564,8 @@ while (total - cursor >= triggerCount) {
     readerMoreFeature.autoChatSummaryEnabled,
     readerMoreFeature.autoChatSummaryTriggerCount,
     messages.length,
+    chatAutoSummaryLastEnd,
+    chatSummaryCards.length,
     queueSummaryTask,
     conversationKey,
   ]);
