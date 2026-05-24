@@ -1,7 +1,9 @@
 import { StoredBookContent, getAllBookContents, getBookContentStorageUsageBytes, replaceAllBookContents } from './bookContentStorage';
 import { Notebook, QuizSession, FavoriteQuote } from '../types';
 import {
-  exportChatHistoryForArchive,
+  exportChatHistoryFromCache,
+} from './readerChatRuntime';
+import {
   getChatHistoryStorageUsageBytes,
   restoreChatHistoryFromArchive,
 } from './chatHistoryStorage';
@@ -301,7 +303,7 @@ export const createAppArchivePayload = async (): Promise<AppArchivePayload> => {
   const localStorageSnapshot = collectLocalStorageSnapshot();
   const bookContents = await getAllBookContents();
   const images = await exportAllImagesAsDataUrls();
-  const chatStore = await exportChatHistoryForArchive();
+  const chatStore = await exportChatHistoryFromCache();
   const ragModule = await import('./ragEngine');
   const exportRagIndex = (ragModule as {
     exportRagIndexForArchive?: () => Promise<{ embeddings?: unknown[]; meta?: unknown[] }>;

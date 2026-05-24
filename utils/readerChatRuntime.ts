@@ -450,6 +450,19 @@ const queuePersistChatStore = (store: ReaderChatStore) => {
     });
 };
 
+export const exportChatHistoryFromCache = async (): Promise<Record<string, unknown>> => {
+  if (chatStoreHydrationPromise) {
+    await chatStoreHydrationPromise;
+  }
+  const current = cloneChatStore(chatStoreCache);
+  chatStorePersistQueue = chatStorePersistQueue
+    .catch(() => undefined)
+    .then(() => saveStoredChatHistoryStore(current as Record<string, unknown>))
+    .catch(() => {});
+  await chatStorePersistQueue;
+  return current as Record<string, unknown>;
+};
+
 export const hydrateReaderChatStore = async () => {
   if (chatStoreHydrated) return;
   if (chatStoreHydrationPromise) {
