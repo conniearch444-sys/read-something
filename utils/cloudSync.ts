@@ -133,11 +133,11 @@ async function autoUpload(): Promise<void> {
   if (uploadingLock) return;
   if (!isLoggedIn()) return;
   uploadingLock = true;
+  // Sync chat to hermes first — independent of upload status check
+  syncChatToHermes().catch(() => {});
   try {
     const status = await getServerSyncStatus();
     const localVer = getLocalSyncVersion();
-    // Sync chat to hermes regardless of version match
-    syncChatToHermes().catch(() => {});
     if (localVer >= status.latest_version) return; // already in sync
     await uploadArchive();
     localStorage.setItem(LAST_UPLOAD_KEY, String(Date.now()));
