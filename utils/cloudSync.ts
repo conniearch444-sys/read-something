@@ -43,8 +43,8 @@ async function api(path: string, options: RequestInit = {}): Promise<any> {
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
 
   if (res.status === 401) {
-    clearToken();
-    throw new Error('登录已过期，请重新输入密码');
+    console.warn('[云同步] 401 认证失败，保留 token 不清除');
+    throw new Error('认证失败');
   }
 
   const data = await res.json();
@@ -145,8 +145,12 @@ export async function syncChatToHermes(): Promise<number> {
 }
 
 async function autoUpload(): Promise<void> {
+  console.log('[Hermes同步] autoUpload 触发, locked=' + uploadingLock + ', loggedIn=' + isLoggedIn());
   if (uploadingLock) return;
-  if (!isLoggedIn()) return;
+  if (!isLoggedIn()) {
+    console.log('[Hermes同步] autoUpload 跳过：未登录');
+    return;
+  }
   uploadingLock = true;
   // Sync chat to hermes first — independent of upload status check
   syncChatToHermes().catch(() => {});
@@ -164,7 +168,11 @@ async function autoUpload(): Promise<void> {
 }
 
 export function startAutoSync(): void {
-  if (!isLoggedIn()) return;
+  console.log('[Hermes同步] startAutoSync 调用, loggedIn=' + isLoggedIn());
+  if (!isLoggedIn()) {
+    console.log('[Hermes同步] startAutoSync 跳过：未登录');
+    return;
+  }
 
   // Auto-upload every AUTO_SYNC_INTERVAL
   if (autoSyncTimer) clearInterval(autoSyncTimer);
