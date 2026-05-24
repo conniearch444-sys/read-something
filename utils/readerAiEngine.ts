@@ -824,6 +824,26 @@ const estimateTokensByText = (raw: string) => {
   return Math.max(1, cjkCount + Math.ceil(nonCjkLength / 4));
 };
 
+let memoryContextCache: { text: string; ts: number } | null = null;
+const MEMORY_CACHE_TTL = 5 * 60 * 1000;
+
+const fetchMemoryContext = async (): Promise<string> => {
+  if (memoryContextCache && Date.now() - memoryContextCache.ts < MEMORY_CACHE_TTL) {
+    return memoryContextCache.text;
+  }
+  try {
+    const res = await fetch('/api/memory/context');
+    if (!res.ok) return '';
+    const data = await res.json();
+    if (data.context && data.context.length) {
+      const text = '[记忆]\n' + data.context.map((s: string) => '• ' + s).join('\n') + '\n\n';
+      memoryContextCache = { text, ts: Date.now() };
+      return text;
+    }
+  } catch {}
+  return '';
+};
+
 const buildAiPromptLineItems = (params: BuildAiPromptParams): PromptLineItem[] => {
   const {
     mode,
@@ -1393,10 +1413,13 @@ export const runConversationGeneration = async (
     console.log(prompt);
     console.groupEnd();
 
+    const memoryContext = await fetchMemoryContext();
+    const finalPrompt = memoryContext + prompt;
+
     const pendingImages = pendingMessages
       .flatMap((m) => m.imageUrls || [])
       .filter(Boolean);
-    const rawReply = await callAiModel(prompt, apiConfig, innerSignal, pendingImages.length > 0 ? pendingImages : undefined);
+    const rawReply = await callAiModel(finalPrompt, apiConfig, innerSignal, pendingImages.length > 0 ? pendingImages : undefined);
     throwIfAborted(innerSignal);
     const parsedReply = parseAiReplyPayload(rawReply);
     const bubbleLines = normalizeAiBubbleLines(
