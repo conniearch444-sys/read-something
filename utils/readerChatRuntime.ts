@@ -455,6 +455,14 @@ export const exportChatHistoryFromCache = async (): Promise<Record<string, unkno
     await chatStoreHydrationPromise;
   }
   const current = cloneChatStore(chatStoreCache);
+  const keys = Object.keys(current);
+  const msgCounts = keys.map(k => {
+    const b = current[k] as any;
+    const c = Array.isArray(b?.messages) ? b.messages.length : 0;
+    return k.slice(0, 30) + ':' + c + '条';
+  });
+  console.log('[导出诊断] chatStoreCache 会话数: ' + keys.length + ', 详情: ' + msgCounts.join(', '));
+
   chatStorePersistQueue = chatStorePersistQueue
     .catch(() => undefined)
     .then(() => saveStoredChatHistoryStore(current as Record<string, unknown>))
