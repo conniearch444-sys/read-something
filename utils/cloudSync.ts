@@ -155,9 +155,6 @@ async function autoUpload(): Promise<void> {
   // Sync chat to hermes first — independent of upload status check
   syncChatToHermes().catch(() => {});
   try {
-    const status = await getServerSyncStatus();
-    const localVer = getLocalSyncVersion();
-    if (localVer >= status.latest_version) return; // already in sync
     await uploadArchive();
     localStorage.setItem(LAST_UPLOAD_KEY, String(Date.now()));
   } catch {
