@@ -155,6 +155,7 @@ async function autoUpload(): Promise<void> {
     if (digest !== lastDigest) {
       const since = lastDigest ? Number(lastDigest.split('-')[1]) || 0 : 0;
       await uploadArchive(since);
+      console.log('[云同步] 上传完成（增量）');
       localStorage.setItem('last_upload_digest', digest);
     }
     await syncChatToHermes();
