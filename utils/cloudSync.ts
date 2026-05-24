@@ -7,7 +7,7 @@ const API_BASE = '/read-something/api';
 const TOKEN_KEY = 'app_cloud_token';
 const VERSION_KEY = 'app_cloud_sync_version';
 const LAST_UPLOAD_KEY = 'app_cloud_last_upload';
-const AUTO_SYNC_INTERVAL = 1 * 60 * 1000; // 1 分钟（测试用）
+const AUTO_SYNC_INTERVAL = 5 * 60 * 1000; // 5 分钟自动备份
 
 let autoSyncTimer: ReturnType<typeof setInterval> | null = null;
 let uploadingLock = false;
