@@ -7,7 +7,7 @@ const API_BASE = '/read-something/api';
 const TOKEN_KEY = 'app_cloud_token';
 const VERSION_KEY = 'app_cloud_sync_version';
 const LAST_UPLOAD_KEY = 'app_cloud_last_upload';
-const AUTO_SYNC_INTERVAL = 5 * 60 * 1000; // 5 分钟自动备份
+const AUTO_SYNC_INTERVAL = 1 * 60 * 1000; // 1 分钟（测试用）
 
 let autoSyncTimer: ReturnType<typeof setInterval> | null = null;
 let uploadingLock = false;
@@ -120,12 +120,27 @@ export async function downloadAndRestoreArchive(): Promise<number> {
 export async function syncChatToHermes(): Promise<number> {
   /** Tell the server to push chat history from the latest archive to hermes.
    *  Uses the server-side API to avoid browser crypto.subtle (requires HTTPS). */
-  if (!isLoggedIn()) return 0;
+  if (!isLoggedIn()) {
+    console.log('[Hermes同步] 跳过：未登录');
+    return 0;
+  }
   try {
-    const data = await api('/sync/chat-to-hermes', { method: 'POST' });
+    const token = getToken();
+    const res = await fetch(`${API_BASE}/sync/chat-to-hermes`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    const text = await res.text();
+    console.log(`[Hermes同步] HTTP ${res.status}: ${text.slice(0, 200)}`);
+    if (!res.ok) return 0;
+    const data = JSON.parse(text);
     return (data as any).conversation_count || 1;
-  } catch {
-    return 0; // best-effort, don't break the auto-upload flow
+  } catch (e: any) {
+    console.log(`[Hermes同步] 异常: ${e.message || e}`);
+    return 0;
   }
 }
 
