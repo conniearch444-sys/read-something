@@ -299,11 +299,26 @@ export interface AppArchivePayload {
   };
 }
 
-export const createAppArchivePayload = async (): Promise<AppArchivePayload> => {
+const filterChatStoreSince = (chatStore: Record<string, unknown>, since: number): Record<string, unknown> => {
+  const filtered: Record<string, unknown> = {};
+  for (const [key, bucket] of Object.entries(chatStore)) {
+    if (!bucket || typeof bucket !== 'object') continue;
+    const msgs = (bucket as any).messages;
+    if (!Array.isArray(msgs)) continue;
+    const hasNew = msgs.some((m: any) => Number(m?.timestamp || 0) > since);
+    if (hasNew) filtered[key] = bucket;
+  }
+  return filtered;
+};
+
+export const createAppArchivePayload = async (since?: number): Promise<AppArchivePayload> => {
   const localStorageSnapshot = collectLocalStorageSnapshot();
   const bookContents = await getAllBookContents();
   const images = await exportAllImagesAsDataUrls();
-  const chatStore = await exportChatHistoryFromCache();
+  const chatStoreFull = await exportChatHistoryFromCache();
+  const chatStore: Record<string, unknown> = since
+    ? filterChatStoreSince(chatStoreFull, since)
+    : chatStoreFull;
   const ragModule = await import('./ragEngine');
   const exportRagIndex = (ragModule as {
     exportRagIndexForArchive?: () => Promise<{ embeddings?: unknown[]; meta?: unknown[] }>;

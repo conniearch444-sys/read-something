@@ -98,17 +98,14 @@ export async function getServerSyncStatus(): Promise<SyncStatus> {
   return api('/sync/status');
 }
 
-export async function uploadArchive(): Promise<number> {
-  console.log('[云同步] uploadArchive 开始...');
-  const payload = await createAppArchivePayload();
-  console.log('[云同步] 存档 payload 大小: ' + JSON.stringify(payload).length);
+export async function uploadArchive(since?: number): Promise<number> {
+  const payload = await createAppArchivePayload(since);
   const localVersion = getLocalSyncVersion();
   const data = await api('/sync/upload', {
     method: 'POST',
     body: JSON.stringify({ payload, local_version: localVersion }),
   });
   setLocalSyncVersion(data.version);
-  console.log('[云同步] 上传成功，新版本: ' + data.version);
   return data.version;
 }
 
@@ -156,7 +153,8 @@ async function autoUpload(): Promise<void> {
     const digest = getChatStoreDigest();
     const lastDigest = localStorage.getItem('last_upload_digest');
     if (digest !== lastDigest) {
-      await uploadArchive();
+      const since = lastDigest ? Number(lastDigest.split('-')[1]) || 0 : 0;
+      await uploadArchive(since);
       localStorage.setItem('last_upload_digest', digest);
     }
     await syncChatToHermes();
