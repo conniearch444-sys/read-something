@@ -835,8 +835,15 @@ const fetchMemoryContext = async (): Promise<string> => {
     const res = await fetch('/api/memory/context');
     if (!res.ok) return '';
     const data = await res.json();
+    let text = '';
     if (data.context && data.context.length) {
-      const text = '[记忆]\n' + data.context.map((s: string) => '• ' + s).join('\n') + '\n\n';
+      text += '[记忆]\n' + data.context.map((s: string) => '• ' + s).join('\n') + '\n';
+    }
+    if (data.today) {
+      text += '\n[今天]\n' + data.today + '\n';
+    }
+    if (text) {
+      text += '\n';
       memoryContextCache = { text, ts: Date.now() };
       return text;
     }
