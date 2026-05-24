@@ -98,13 +98,16 @@ export async function getServerSyncStatus(): Promise<SyncStatus> {
 }
 
 export async function uploadArchive(): Promise<number> {
+  console.log('[云同步] uploadArchive 开始...');
   const payload = await createAppArchivePayload();
+  console.log('[云同步] 存档 payload 大小: ' + JSON.stringify(payload).length);
   const localVersion = getLocalSyncVersion();
   const data = await api('/sync/upload', {
     method: 'POST',
     body: JSON.stringify({ payload, local_version: localVersion }),
   });
   setLocalSyncVersion(data.version);
+  console.log('[云同步] 上传成功，新版本: ' + data.version);
   return data.version;
 }
 
