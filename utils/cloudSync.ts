@@ -155,10 +155,9 @@ async function autoUpload(): Promise<void> {
     return;
   }
   uploadingLock = true;
-  // Sync chat to hermes first — independent of upload status check
-  syncChatToHermes().catch(() => {});
   try {
     await uploadArchive();
+    await syncChatToHermes();
     localStorage.setItem(LAST_UPLOAD_KEY, String(Date.now()));
   } catch {
     // Network error, ignore silently
