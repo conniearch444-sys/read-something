@@ -2,6 +2,7 @@ import {
   createAppArchivePayload,
   restoreAppArchivePayload,
 } from './appArchive';
+import { getChatStoreDigest } from './readerChatRuntime';
 
 const API_BASE = '/read-something/api';
 const TOKEN_KEY = 'app_cloud_token';
@@ -148,15 +149,16 @@ export async function syncChatToHermes(): Promise<number> {
 }
 
 async function autoUpload(): Promise<void> {
-  console.log('[Hermes同步] autoUpload 触发, locked=' + uploadingLock + ', loggedIn=' + isLoggedIn());
   if (uploadingLock) return;
-  if (!isLoggedIn()) {
-    console.log('[Hermes同步] autoUpload 跳过：未登录');
-    return;
-  }
+  if (!isLoggedIn()) return;
   uploadingLock = true;
   try {
-    await uploadArchive();
+    const digest = getChatStoreDigest();
+    const lastDigest = localStorage.getItem('last_upload_digest');
+    if (digest !== lastDigest) {
+      await uploadArchive();
+      localStorage.setItem('last_upload_digest', digest);
+    }
     await syncChatToHermes();
     localStorage.setItem(LAST_UPLOAD_KEY, String(Date.now()));
   } catch {

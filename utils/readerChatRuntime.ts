@@ -450,6 +450,22 @@ const queuePersistChatStore = (store: ReaderChatStore) => {
     });
 };
 
+export const getChatStoreDigest = (): string => {
+  const keys = Object.keys(chatStoreCache);
+  let count = 0;
+  let latest = 0;
+  for (const k of keys) {
+    const b = chatStoreCache[k] as any;
+    const msgs = Array.isArray(b?.messages) ? b.messages : [];
+    count += msgs.length;
+    if (msgs.length > 0) {
+      const ts = msgs[msgs.length - 1]?.timestamp || 0;
+      if (ts > latest) latest = ts;
+    }
+  }
+  return `${count}-${latest}`;
+};
+
 export const exportChatHistoryFromCache = async (): Promise<Record<string, unknown>> => {
   if (chatStoreHydrationPromise) {
     await chatStoreHydrationPromise;
