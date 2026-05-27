@@ -90,6 +90,17 @@ const normalizeChapter = (value: unknown): Chapter | null => {
   };
 };
 
+const normalizeReaderState = (value: unknown): ReaderBookState | undefined => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  try {
+    const cleaned = JSON.parse(JSON.stringify(value));
+    if (!cleaned || typeof cleaned !== 'object' || Array.isArray(cleaned)) return undefined;
+    return cleaned as ReaderBookState;
+  } catch {
+    return undefined;
+  }
+};
+
 const normalizeStoredBookContent = (value: unknown): StoredBookContent | null => {
   if (!value || typeof value !== 'object') return null;
   const source = value as Partial<StoredBookContent>;
@@ -110,7 +121,7 @@ const normalizeStoredBookContent = (value: unknown): StoredBookContent | null =>
   return {
     fullText,
     chapters,
-    readerState: source.readerState,
+    ...(source.readerState != null ? { readerState: normalizeReaderState(source.readerState) } : {}),
     bookSummaryCards,
     bookAutoSummaryLastEnd,
   };
