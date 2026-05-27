@@ -316,8 +316,9 @@ export const createAppArchivePayload = async (since?: number): Promise<AppArchiv
   const bookContents = await getAllBookContents();
   const images = await exportAllImagesAsDataUrls();
   const chatStoreFull = await exportChatHistoryFromCache();
-  const chatStore: Record<string, unknown> = since
-    ? filterChatStoreSince(chatStoreFull, since)
+  const useFiltered = typeof since === 'number' && since > 0;
+  const chatStore: Record<string, unknown> = useFiltered
+    ? filterChatStoreSince(chatStoreFull, since!)
     : chatStoreFull;
   const ragModule = await import('./ragEngine');
   const exportRagIndex = (ragModule as {

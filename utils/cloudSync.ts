@@ -2,7 +2,7 @@ import {
   createAppArchivePayload,
   restoreAppArchivePayload,
 } from './appArchive';
-import { getChatStoreDigest } from './readerChatRuntime';
+import { getChatStoreDigest, hydrateReaderChatStore } from './readerChatRuntime';
 
 const API_BASE = '/read-something/api';
 const TOKEN_KEY = 'app_cloud_token';
@@ -13,6 +13,7 @@ const AUTO_SYNC_INTERVAL = 5 * 60 * 1000; // 5 分钟自动备份
 let autoSyncTimer: ReturnType<typeof setInterval> | null = null;
 let autoUploadTimer: ReturnType<typeof setTimeout> | null = null;
 let uploadingLock = false;
+let beforeunloadRegistered = false;
 
 function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -169,6 +170,8 @@ async function autoUpload(force?: boolean): Promise<void> {
 
   uploadingLock = true;
   try {
+    // 等待聊天记录水合完成，确保 digest 计算准确（避免缓存未就绪时 digest='0-0'）
+    await hydrateReaderChatStore();
     const digest = getChatStoreDigest();
     const lastDigest = localStorage.getItem('last_upload_digest');
     console.log('[云同步] 摘要对比: current=' + digest + ' last=' + (lastDigest || '(null)') + ' force=' + !!force);
@@ -201,17 +204,19 @@ export function startAutoSync(): void {
   if (autoSyncTimer) clearInterval(autoSyncTimer);
   autoSyncTimer = setInterval(autoUpload, AUTO_SYNC_INTERVAL);
 
-  // Auto-upload on page close
-  window.addEventListener('beforeunload', () => {
-    if (!isLoggedIn()) return;
-    // Use sendBeacon for fire-and-forget when possible
-    const data = JSON.stringify({ closing: true, ts: Date.now() });
-    try {
-      navigator.sendBeacon(`${API_BASE}/api/health`, data);
-    } catch {
-      // ignore
-    }
-  });
+  // Auto-upload on page close (只注册一次)
+  if (!beforeunloadRegistered) {
+    beforeunloadRegistered = true;
+    window.addEventListener('beforeunload', () => {
+      if (!isLoggedIn()) return;
+      const data = JSON.stringify({ closing: true, ts: Date.now() });
+      try {
+        navigator.sendBeacon(`${API_BASE}/api/health`, data);
+      } catch {
+        // ignore
+      }
+    });
+  }
 
   // 清除之前的单次上传定时器，防止多次调用堆积
   if (autoUploadTimer) {
