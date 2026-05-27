@@ -148,6 +148,12 @@ export async function syncChatToHermes(): Promise<number> {
 async function autoUpload(): Promise<void> {
   if (uploadingLock) return;
   if (!isLoggedIn()) return;
+
+  // ?force=1 参数：清除上次摘要，触发全量上传
+  if (new URLSearchParams(window.location.search).get('force') === '1') {
+    localStorage.removeItem('last_upload_digest');
+  }
+
   uploadingLock = true;
   try {
     const digest = getChatStoreDigest();
@@ -191,8 +197,9 @@ export function startAutoSync(): void {
   });
 
   // Do an initial upload if never done or last upload was > 30 min ago
+  const forceUpload = new URLSearchParams(window.location.search).get('force') === '1';
   const lastUpload = Number(localStorage.getItem(LAST_UPLOAD_KEY) || '0');
-  if (!lastUpload || Date.now() - lastUpload > 30 * 60 * 1000) {
+  if (forceUpload || !lastUpload || Date.now() - lastUpload > 30 * 60 * 1000) {
     setTimeout(autoUpload, 3000); // Delay to let app finish init
   }
 }
@@ -207,6 +214,7 @@ export function stopAutoSync(): void {
 export async function initCloudAutoRestore(): Promise<boolean> {
   /** Auto-restore on app startup if local is empty and cloud has data. */
   if (!isLoggedIn()) return false;
+  if (new URLSearchParams(window.location.search).get('force') === '1') return false;
   try {
     const status = await getServerSyncStatus();
     if (status.latest_version === 0) return false;
