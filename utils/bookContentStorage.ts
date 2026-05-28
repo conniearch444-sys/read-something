@@ -192,6 +192,11 @@ export const saveBookContent = async (bookId: string, fullText: string, chapters
     tx.onerror = () => reject(tx.error || new Error('保存书籍内容失败'));
     tx.onabort = () => reject(tx.error || new Error('保存书籍内容失败'));
   });
+
+  // 写入成功后同步更新当前摘要，使后续增量上传能从 localStorage 直接读取
+  try {
+    updateCurrentBookDigest(bookId, { fullText, chapters });
+  } catch { /* localStorage 满或不可用时静默跳过 */ }
 };
 
 export const saveBookReaderState = async (bookId: string, readerState: ReaderBookState): Promise<void> => {
@@ -285,6 +290,8 @@ export const deleteBookContent = async (bookId: string): Promise<void> => {
     tx.onerror = () => reject(tx.error || new Error('删除书籍内容失败'));
     tx.onabort = () => reject(tx.error || new Error('删除书籍内容失败'));
   });
+
+  try { removeCurrentBookDigest(bookId); } catch { /* ignore */ }
 };
 
 export const getBookTextLength = (book: Partial<Book>): number => {
@@ -385,6 +392,141 @@ export const getAllBookContents = async (): Promise<Record<string, StoredBookCon
   });
 };
 
+// ─── 书籍内容摘要（增量上传用）──────────────────────────────────────
+// 摘要由 saveBookContent / deleteBookContent / replaceAllBookContents 维护，
+// 存入 localStorage（仅几十 KB），上传时无需读取 IndexedDB 即可判断变化。
+// 只在摘要变化时才从 IndexedDB 读取完整内容，避免 1GB+ IndexedDB 全量加载导致 OOM。
+
+const CURRENT_DIGESTS_KEY = 'app_book_current_digests';
+
+const computeBookContentDigest = (content: { fullText: string; chapters: Chapter[] }): string => {
+  const fullTextLen = content.fullText?.length || 0;
+  const chapterCount = content.chapters?.length || 0;
+  if (fullTextLen === 0 && chapterCount === 0) return 'empty';
+  const head = content.fullText?.slice(0, 200) || '';
+  const tail = fullTextLen > 400 ? content.fullText?.slice(-200) || '' : '';
+  const chapterTitles = (content.chapters || []).map(c => c.title || '').join('|').slice(0, 500);
+  const sample = `${fullTextLen}:${chapterCount}:${head}:${tail}:${chapterTitles}`;
+  let hash = 5381;
+  for (let i = 0; i < sample.length; i++) {
+    hash = ((hash << 5) + hash + sample.charCodeAt(i)) | 0;
+  }
+  return (hash >>> 0).toString(16);
+};
+
+export const getCurrentBookContentDigests = (): Record<string, string> => {
+  try {
+    const raw = localStorage.getItem(CURRENT_DIGESTS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (typeof parsed !== 'object' || !parsed) return {};
+    return parsed as Record<string, string>;
+  } catch {
+    return {};
+  }
+};
+
+const updateCurrentBookDigest = (bookId: string, content: { fullText: string; chapters: Chapter[] }): void => {
+  const digests = getCurrentBookContentDigests();
+  digests[bookId] = computeBookContentDigest(content);
+  localStorage.setItem(CURRENT_DIGESTS_KEY, JSON.stringify(digests));
+};
+
+const removeCurrentBookDigest = (bookId: string): void => {
+  const digests = getCurrentBookContentDigests();
+  delete digests[bookId];
+  localStorage.setItem(CURRENT_DIGESTS_KEY, JSON.stringify(digests));
+};
+
+const storeAllCurrentBookDigests = (digests: Record<string, string>): void => {
+  localStorage.setItem(CURRENT_DIGESTS_KEY, JSON.stringify(digests));
+};
+
+// 读取上次上传成功时的摘要快照（用于增量对比）
+const STORED_DIGESTS_KEY = 'app_book_content_digests';
+export const getStoredBookContentDigests = (): Record<string, string> => {
+  try {
+    const raw = localStorage.getItem(STORED_DIGESTS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (typeof parsed !== 'object' || !parsed) return {};
+    return parsed as Record<string, string>;
+  } catch {
+    return {};
+  }
+};
+
+export const storeBookContentDigests = (digests: Record<string, string>): void => {
+  localStorage.setItem(STORED_DIGESTS_KEY, JSON.stringify(digests));
+};
+
+// 获取自上次上传以来内容有变化的书籍（或新增的书籍）。
+// 从 localStorage 读取当前摘要（由 saveBookContent 维护），与上次上传快照对比，
+// 只在摘要变化时才从 IndexedDB 读完整内容——避免 1GB+ IndexedDB 全量加载导致平板 OOM。
+// 首次加载时 currentDigests 为空，做一次全量填充后（一次性代价），后续全部增量。
+export const getChangedBookContents = async (): Promise<{
+  changed: Record<string, StoredBookContent>;
+  allDigests: Record<string, string>;
+}> => {
+  const currentDigests = getCurrentBookContentDigests();
+  const storedDigests = getStoredBookContentDigests();
+
+  // 首次加载：localStorage 中没有当前摘要，需做一次全量 IndexedDB 扫描来填充。
+  // 这次扫描有一次性内存成本，但只发生在新代码首次运行或 localStorage 被清空后。
+  if (Object.keys(currentDigests).length === 0) {
+    const allContents = await getAllBookContents();
+    const populated: Record<string, string> = {};
+    for (const [bookId, content] of Object.entries(allContents)) {
+      populated[bookId] = computeBookContentDigest(content);
+    }
+    try { storeAllCurrentBookDigests(populated); } catch { /* ignore */ }
+
+    const changed: Record<string, StoredBookContent> = {};
+    for (const [bookId, currentDigest] of Object.entries(populated)) {
+      if (currentDigest !== storedDigests[bookId]) {
+        changed[bookId] = allContents[bookId];
+      }
+    }
+    for (const bookId of Object.keys(storedDigests)) {
+      if (!(bookId in populated)) {
+        populated[bookId] = 'deleted';
+      }
+    }
+    console.log('[摘要] 首次填充完成: 总数=' + Object.keys(populated).length + ' 变化=' + Object.keys(changed).length);
+    return { changed, allDigests: populated };
+  }
+
+  // 正常增量模式：从 localStorage 读摘要，只在摘要变化时读 IndexedDB
+  const changed: Record<string, StoredBookContent> = {};
+  const allDigests: Record<string, string> = { ...currentDigests };
+  let checkedCount = 0;
+  let changedCount = 0;
+
+  for (const [bookId, currentDigest] of Object.entries(currentDigests)) {
+    checkedCount++;
+    if (currentDigest !== storedDigests[bookId]) {
+      changedCount++;
+      try {
+        const content = await getBookContent(bookId);
+        if (content) {
+          changed[bookId] = content;
+        }
+      } catch (e: any) {
+        console.warn('[摘要] 读取变化书籍内容失败:', bookId, e?.message || e);
+      }
+    }
+  }
+
+  for (const bookId of Object.keys(storedDigests)) {
+    if (!(bookId in currentDigests)) {
+      allDigests[bookId] = 'deleted';
+    }
+  }
+
+  console.log('[摘要] 增量模式: 检查=' + checkedCount + ' 变化=' + changedCount + ' IndexedDB读取=' + Object.keys(changed).length);
+  return { changed, allDigests };
+};
+
 export const clearAllBookContents = async (): Promise<void> => {
   const db = await openBookContentDb();
 
@@ -419,6 +561,18 @@ export const replaceAllBookContents = async (nextEntries: Record<string, StoredB
     tx.onerror = () => reject(tx.error || new Error('替换书籍内容失败'));
     tx.onabort = () => reject(tx.error || new Error('替换书籍内容失败'));
   });
+
+  // 替换后全量刷新当前摘要
+  try {
+    const digests: Record<string, string> = {};
+    for (const [bookId, payload] of Object.entries(nextEntries || {})) {
+      if (!bookId || typeof bookId !== 'string') continue;
+      const normalized = normalizeStoredBookContent(payload);
+      if (!normalized) continue;
+      digests[bookId] = computeBookContentDigest(normalized);
+    }
+    storeAllCurrentBookDigests(digests);
+  } catch { /* ignore */ }
 };
 
 export const getBookContentStorageUsageBytes = async (): Promise<{ totalBytes: number; byBookId: Record<string, number> }> => {

@@ -3,12 +3,16 @@ import {
   restoreAppArchivePayload,
 } from './appArchive';
 import { getChatStoreDigest, hydrateReaderChatStore } from './readerChatRuntime';
+import { storeBookContentDigests, getCurrentBookContentDigests, getStoredBookContentDigests } from './bookContentStorage';
 
 const API_BASE = '/read-something/api';
 const TOKEN_KEY = 'app_cloud_token';
 const VERSION_KEY = 'app_cloud_sync_version';
 const LAST_UPLOAD_KEY = 'app_cloud_last_upload';
+const LAST_UPLOAD_DIGEST_KEY = 'last_upload_digest';
+const LAST_RESTORE_TS_KEY = 'app_cloud_last_restore_ts';
 const AUTO_SYNC_INTERVAL = 5 * 60 * 1000; // 5 分钟自动备份
+const RESTORE_COOLDOWN = 10 * 60 * 1000; // 10 分钟内不重复 restore
 
 let autoSyncTimer: ReturnType<typeof setInterval> | null = null;
 let autoUploadTimer: ReturnType<typeof setTimeout> | null = null;
@@ -108,6 +112,14 @@ export async function uploadArchive(since?: number): Promise<number> {
     body: JSON.stringify({ payload, local_version: localVersion }),
   });
   setLocalSyncVersion(data.version);
+  // 上传成功后照抄当前摘要快照到 "stored" 键，使下次增量对比可跳过未变化书籍
+  try {
+    const digests = getCurrentBookContentDigests();
+    storeBookContentDigests(digests);
+    console.log('[云同步] 书籍内容摘要已更新:', Object.keys(digests).length, '本');
+  } catch (e: any) {
+    console.warn('[云同步] 摘要快照更新失败:', e?.message || e);
+  }
   return data.version;
 }
 
@@ -148,6 +160,25 @@ export async function syncChatToHermes(): Promise<number> {
 }
 
 async function autoUpload(force?: boolean): Promise<void> {
+  // ?force=1 参数：跳过所有检查，直接全量上传
+  if (force) {
+    localStorage.removeItem(LAST_UPLOAD_DIGEST_KEY);
+    console.log('[云同步] force=1 检测到，清除摘要缓存，直接全量上传');
+    try {
+      try {
+        await hydrateReaderChatStore();
+      } catch (e: any) {
+        console.warn('[云同步] 聊天记录水合失败（继续上传）:', e?.message || e);
+      }
+      await uploadArchive(0);
+      console.log('[云同步] 上传完成（强制全量）');
+      localStorage.setItem(LAST_UPLOAD_KEY, String(Date.now()));
+    } catch (err: any) {
+      console.error('[云同步] 强制上传失败:', err?.message || err, err?.stack || '');
+    }
+    return;
+  }
+
   if (uploadingLock) {
     console.log('[云同步] autoUpload 跳过：上传锁已被持有');
     return;
@@ -157,32 +188,37 @@ async function autoUpload(force?: boolean): Promise<void> {
     return;
   }
 
-  // 清理定时器引用（来自 setTimeout 的单次调用已触发，清除引用）
   if (autoUploadTimer) {
     autoUploadTimer = null;
   }
 
-  // ?force=1 参数：清除上次摘要，强制触发全量上传（无论 digest 是否变化）
-  if (force) {
-    localStorage.removeItem('last_upload_digest');
-    console.log('[云同步] force=1 检测到，清除摘要缓存，即将强制全量上传');
-  }
-
   uploadingLock = true;
   try {
-    // 等待聊天记录水合完成，确保 digest 计算准确（避免缓存未就绪时 digest='0-0'）
     await hydrateReaderChatStore();
-    const digest = getChatStoreDigest();
-    const lastDigest = localStorage.getItem('last_upload_digest');
-    console.log('[云同步] 摘要对比: current=' + digest + ' last=' + (lastDigest || '(null)') + ' force=' + !!force);
-    if (force || digest !== lastDigest) {
-      const since = force ? 0 : (lastDigest ? Number(lastDigest.split('-')[1]) || 0 : 0);
-      console.log('[云同步] 开始上传, since=' + since);
+    const chatDigest = getChatStoreDigest();
+    const lastDigest = localStorage.getItem(LAST_UPLOAD_DIGEST_KEY);
+
+    // 获取当前书籍内容摘要（来自 localStorage 缓存，轻量级，不触及 IndexedDB）
+    const currentBookDigests = getCurrentBookContentDigests();
+    const storedBookDigests = getStoredBookContentDigests();
+    const currentBookDigestStr = JSON.stringify(currentBookDigests);
+    const storedBookDigestStr = JSON.stringify(storedBookDigests);
+
+    const chatChanged = chatDigest !== lastDigest;
+    const booksChanged = currentBookDigestStr !== storedBookDigestStr;
+
+    console.log('[云同步] 摘要对比: chatChanged=' + chatChanged + ' booksChanged=' + booksChanged +
+      ' chatDigest=' + chatDigest + ' lastDigest=' + (lastDigest || '(null)') +
+      ' bookCount=' + Object.keys(currentBookDigests).length);
+
+    if (chatChanged || booksChanged) {
+      const since = lastDigest ? Number(lastDigest.split('-')[1]) || 0 : 0;
+      console.log('[云同步] 开始上传, since=' + since + ' (chatChanged=' + chatChanged + ' booksChanged=' + booksChanged + ')');
       await uploadArchive(since);
-      console.log('[云同步] 上传完成' + (force ? '（强制全量）' : '（增量）'));
-      localStorage.setItem('last_upload_digest', digest);
+      console.log('[云同步] 上传完成（增量）');
+      localStorage.setItem(LAST_UPLOAD_DIGEST_KEY, chatDigest);
     } else {
-      console.log('[云同步] 跳过上传：摘要无变化 (digest=' + digest + ')');
+      console.log('[云同步] 跳过上传：摘要无变化');
     }
     await syncChatToHermes();
     localStorage.setItem(LAST_UPLOAD_KEY, String(Date.now()));
@@ -211,7 +247,7 @@ export function startAutoSync(): void {
       if (!isLoggedIn()) return;
       const data = JSON.stringify({ closing: true, ts: Date.now() });
       try {
-        navigator.sendBeacon(`${API_BASE}/api/health`, data);
+        navigator.sendBeacon(`/api/health`, data);
       } catch {
         // ignore
       }
@@ -249,6 +285,14 @@ export async function initCloudAutoRestore(): Promise<boolean> {
   /** Auto-restore on app startup if local is empty and cloud has data. */
   if (!isLoggedIn()) return false;
   if (new URLSearchParams(window.location.search).get('force') === '1') return false;
+
+  // 防止短时间内重复 restore 导致 reload 循环
+  const lastRestoreTs = Number(localStorage.getItem(LAST_RESTORE_TS_KEY) || '0');
+  if (lastRestoreTs > 0 && Date.now() - lastRestoreTs < RESTORE_COOLDOWN) {
+    console.log('[云同步] initCloudAutoRestore 跳过：距上次 restore 不足 10 分钟');
+    return false;
+  }
+
   try {
     const status = await getServerSyncStatus();
     if (status.latest_version === 0) return false;
@@ -257,6 +301,7 @@ export async function initCloudAutoRestore(): Promise<boolean> {
     if (localVer >= status.latest_version) return false;
 
     // local version is behind — auto-pull from cloud
+    localStorage.setItem(LAST_RESTORE_TS_KEY, String(Date.now()));
     await downloadAndRestoreArchive();
     return true;
   } catch {

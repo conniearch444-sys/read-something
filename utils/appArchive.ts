@@ -1,4 +1,11 @@
-import { StoredBookContent, getAllBookContents, getBookContentStorageUsageBytes, replaceAllBookContents } from './bookContentStorage';
+import {
+  StoredBookContent,
+  getAllBookContents,
+  getBookContentStorageUsageBytes,
+  replaceAllBookContents,
+  getChangedBookContents,
+  storeBookContentDigests,
+} from './bookContentStorage';
 import { Notebook, QuizSession, FavoriteQuote } from '../types';
 import {
   exportChatHistoryFromCache,
@@ -312,29 +319,82 @@ const filterChatStoreSince = (chatStore: Record<string, unknown>, since: number)
 };
 
 export const createAppArchivePayload = async (since?: number): Promise<AppArchivePayload> => {
-  const localStorageSnapshot = collectLocalStorageSnapshot();
-  const bookContents = await getAllBookContents();
-  const images = await exportAllImagesAsDataUrls();
-  const chatStoreFull = await exportChatHistoryFromCache();
+  // 每一步独立 try/catch，确保单点故障不阻塞整个上传
+  let localStorageSnapshot: Record<string, string> = {};
+  try {
+    localStorageSnapshot = collectLocalStorageSnapshot();
+  } catch (e: any) {
+    console.error('[导出] collectLocalStorageSnapshot 失败:', e?.message || e);
+  }
+
+  // 增量同步时使用摘要变化检测，只导出内容有变化的书籍
+  // since > 0 表示增量模式；since === 0 或 undefined 表示全量模式
+  const useIncremental = typeof since === 'number' && since > 0;
+  let bookContents: Record<string, StoredBookContent> = {};
+  let currentDigests: Record<string, string> = {};
+  try {
+    if (useIncremental) {
+      const result = await getChangedBookContents();
+      bookContents = result.changed;
+      currentDigests = result.allDigests;
+      console.log(
+        '[导出] bookContents 增量模式: 总数=' + Object.keys(currentDigests).length +
+        ' 变化=' + Object.keys(bookContents).length
+      );
+    } else {
+      bookContents = await getAllBookContents();
+      console.log('[导出] bookContents 全量模式: 数量=' + Object.keys(bookContents).length);
+    }
+  } catch (e: any) {
+    console.error('[导出] bookContents 导出失败:', e?.message || e);
+  }
+
+  let images: Record<string, string> = {};
+  try {
+    images = await exportAllImagesAsDataUrls();
+    console.log('[导出] images 数量:', Object.keys(images).length);
+  } catch (e: any) {
+    console.error('[导出] exportAllImagesAsDataUrls 失败:', e?.message || e);
+  }
+
+  let chatStoreFull: Record<string, unknown> = {};
+  try {
+    chatStoreFull = await exportChatHistoryFromCache();
+  } catch (e: any) {
+    console.error('[导出] exportChatHistoryFromCache 失败:', e?.message || e);
+  }
   const useFiltered = typeof since === 'number' && since > 0;
   const chatStore: Record<string, unknown> = useFiltered
     ? filterChatStoreSince(chatStoreFull, since!)
     : chatStoreFull;
-  const ragModule = await import('./ragEngine');
-  const exportRagIndex = (ragModule as {
-    exportRagIndexForArchive?: () => Promise<{ embeddings?: unknown[]; meta?: unknown[] }>;
-  }).exportRagIndexForArchive;
-  const ragRaw = typeof exportRagIndex === 'function' ? await exportRagIndex() : null;
-  const ragIndex = {
-    embeddings: Array.isArray(ragRaw?.embeddings) ? ragRaw.embeddings : [],
-    meta: Array.isArray(ragRaw?.meta) ? ragRaw.meta : [],
-  };
-  const studyHubRaw = await exportStudyHubForArchive();
-  const studyHub = {
-    notebooks: Array.isArray(studyHubRaw?.notebooks) ? studyHubRaw.notebooks : [],
-    quizSessions: Array.isArray(studyHubRaw?.quizSessions) ? studyHubRaw.quizSessions : [],
-    favoriteQuotes: Array.isArray(studyHubRaw?.favoriteQuotes) ? studyHubRaw.favoriteQuotes : [],
-  };
+
+  let ragIndex = { embeddings: [] as unknown[], meta: [] as unknown[] };
+  try {
+    const ragModule = await import('./ragEngine');
+    const exportRagIndex = (ragModule as {
+      exportRagIndexForArchive?: () => Promise<{ embeddings?: unknown[]; meta?: unknown[] }>;
+    }).exportRagIndexForArchive;
+    const ragRaw = typeof exportRagIndex === 'function' ? await exportRagIndex() : null;
+    ragIndex = {
+      embeddings: Array.isArray(ragRaw?.embeddings) ? ragRaw.embeddings : [],
+      meta: Array.isArray(ragRaw?.meta) ? ragRaw.meta : [],
+    };
+  } catch (e: any) {
+    console.error('[导出] RAG 索引导出失败:', e?.message || e);
+  }
+
+  let studyHub = { notebooks: [], quizSessions: [], favoriteQuotes: [] as any[] };
+  try {
+    const studyHubRaw = await exportStudyHubForArchive();
+    studyHub = {
+      notebooks: Array.isArray(studyHubRaw?.notebooks) ? studyHubRaw.notebooks : [],
+      quizSessions: Array.isArray(studyHubRaw?.quizSessions) ? studyHubRaw.quizSessions : [],
+      favoriteQuotes: Array.isArray(studyHubRaw?.favoriteQuotes) ? studyHubRaw.favoriteQuotes : [],
+    };
+  } catch (e: any) {
+    console.error('[导出] exportStudyHubForArchive 失败:', e?.message || e);
+  }
+
   let ttsAudio: Record<string, { audio: string; meta: Record<string, unknown> }> = {};
   try {
     ttsAudio = await exportTtsAudioForArchive() as Record<string, { audio: string; meta: Record<string, unknown> }>;
