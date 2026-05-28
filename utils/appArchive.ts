@@ -9,7 +9,6 @@ import {
 } from './chatHistoryStorage';
 import {
   clearAllImages,
-  exportAllImagesAsDataUrls,
   getAllImageRefsAndSizes,
   isImageRef,
   saveImageBlobByRef,
@@ -313,10 +312,9 @@ const filterChatStoreSince = (chatStore: Record<string, unknown>, since: number)
 
 export const createAppArchivePayload = async (since?: number): Promise<AppArchivePayload> => {
   const localStorageSnapshot = collectLocalStorageSnapshot();
-  // 不上传书籍全文（15本书约 1GB，平板会 OOM）。
-  // 书籍元数据（书名、作者等）已包含在 localStorageSnapshot.app_books 中。
+  // 不上传全文（平板1GB数据会OOM）和图片，元数据已在localStorage里
   const bookContents = {};
-  const images = await exportAllImagesAsDataUrls();
+  const images = {};
   const chatStoreFull = await exportChatHistoryFromCache();
   const useFiltered = typeof since === 'number' && since > 0;
   const chatStore: Record<string, unknown> = useFiltered

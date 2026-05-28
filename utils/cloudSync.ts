@@ -173,9 +173,8 @@ async function autoUpload(force?: boolean): Promise<void> {
     // 等待聊天记录水合完成，确保 digest 计算准确（避免缓存未就绪时 digest='0-0'）
     await hydrateReaderChatStore();
     const chatDigest = getChatStoreDigest();
-    // 拼接书名摘要，使书架变化也能触发上传（不需要等聊天）
-    const booksDigest = localStorage.getItem('app_books') || '';
-    const digest = chatDigest + '|' + (booksDigest.length > 0 ? String(booksDigest.length) + '-' + String(booksDigest.split('"id"').length) : '0');
+    const booksRaw = localStorage.getItem('app_books') || '';
+    const digest = chatDigest + '|' + (booksRaw.length > 0 ? String(booksRaw.length) + '-' + String(booksRaw.split('"id"').length) : '0');
     const lastDigest = localStorage.getItem('last_upload_digest');
     console.log('[云同步] 摘要对比: current=' + digest + ' last=' + (lastDigest || '(null)') + ' force=' + !!force);
     if (force || digest !== lastDigest) {
@@ -252,16 +251,8 @@ export async function initCloudAutoRestore(): Promise<boolean> {
   /** Auto-restore on app startup if local is empty and cloud has data. */
   if (!isLoggedIn()) return false;
   if (new URLSearchParams(window.location.search).get('force') === '1') return false;
-
-  // 本地已有书籍 → 不覆盖，避免重载循环
-  try {
-    const raw = localStorage.getItem('app_books');
-    if (raw) {
-      const books = JSON.parse(raw);
-      if (Array.isArray(books) && books.length > 0) return false;
-    }
-  } catch {}
-
+  // 本地已有书籍 → 不覆盖
+  try { const raw = localStorage.getItem('app_books'); if (raw) { const b = JSON.parse(raw); if (Array.isArray(b) && b.length > 0) return false; } } catch {}
   try {
     const status = await getServerSyncStatus();
     if (status.latest_version === 0) return false;
