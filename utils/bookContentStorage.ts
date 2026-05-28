@@ -461,9 +461,13 @@ export const storeBookContentDigests = (digests: Record<string, string>): void =
 };
 
 // 获取自上次上传以来内容有变化的书籍（或新增的书籍）。
-// 从 localStorage 读取当前摘要（由 saveBookContent 维护），与上次上传快照对比，
-// 只在摘要变化时才从 IndexedDB 读完整内容——避免 1GB+ IndexedDB 全量加载导致平板 OOM。
-// 首次加载时 currentDigests 为空，做一次全量填充后（一次性代价），后续全部增量。
+// 不调用 getAllBookContents()（会将全部 fullText 加载到内存 → 平板 OOM）。
+// 改为从 localStorage app_books 获取书籍列表，只在以下情况读 IndexedDB：
+//   a) 当前摘要缺失（新书/首次运行）→ 读 1 本，摘要和内容一次读出，复用
+//   b) 摘要与上次上传快照不同 → 读 1 本放入 changed
+// 每轮最多读 MAX_BOOK_READS_PER_CYCLE 本，超过的下轮再处理。
+const MAX_BOOK_READS_PER_CYCLE = 3;
+
 export const getChangedBookContents = async (): Promise<{
   changed: Record<string, StoredBookContent>;
   allDigests: Record<string, string>;
@@ -471,45 +475,68 @@ export const getChangedBookContents = async (): Promise<{
   const currentDigests = getCurrentBookContentDigests();
   const storedDigests = getStoredBookContentDigests();
 
-  // 首次加载：localStorage 中没有当前摘要，需做一次全量 IndexedDB 扫描来填充。
-  // 这次扫描有一次性内存成本，但只发生在新代码首次运行或 localStorage 被清空后。
-  if (Object.keys(currentDigests).length === 0) {
-    const allContents = await getAllBookContents();
-    const populated: Record<string, string> = {};
-    for (const [bookId, content] of Object.entries(allContents)) {
-      populated[bookId] = computeBookContentDigest(content);
+  // 从 localStorage app_books 获取书籍 ID 列表（不读 IndexedDB）
+  let bookIds: string[] = [];
+  try {
+    const raw = localStorage.getItem('app_books');
+    if (raw) {
+      const books = JSON.parse(raw);
+      if (Array.isArray(books)) {
+        bookIds = books.map((b: any) => b.id).filter((id: any) => typeof id === 'string' && id);
+      }
     }
-    try { storeAllCurrentBookDigests(populated); } catch { /* ignore */ }
+  } catch { /* ignore */ }
 
-    const changed: Record<string, StoredBookContent> = {};
-    for (const [bookId, currentDigest] of Object.entries(populated)) {
-      if (currentDigest !== storedDigests[bookId]) {
-        changed[bookId] = allContents[bookId];
-      }
-    }
-    for (const bookId of Object.keys(storedDigests)) {
-      if (!(bookId in populated)) {
-        populated[bookId] = 'deleted';
-      }
-    }
-    console.log('[摘要] 首次填充完成: 总数=' + Object.keys(populated).length + ' 变化=' + Object.keys(changed).length);
-    return { changed, allDigests: populated };
+  for (const id of Object.keys(storedDigests)) {
+    if (!bookIds.includes(id)) bookIds.push(id);
   }
 
-  // 正常增量模式：从 localStorage 读摘要，只在摘要变化时读 IndexedDB
   const changed: Record<string, StoredBookContent> = {};
-  const allDigests: Record<string, string> = { ...currentDigests };
-  let checkedCount = 0;
-  let changedCount = 0;
+  let readsUsed = 0;
+  const digestUpdates: Record<string, string> = {};
 
-  for (const [bookId, currentDigest] of Object.entries(currentDigests)) {
-    checkedCount++;
-    if (currentDigest !== storedDigests[bookId]) {
-      changedCount++;
+  for (const bookId of bookIds) {
+    if (readsUsed >= MAX_BOOK_READS_PER_CYCLE) break;
+
+    let currentDigest = currentDigests[bookId];
+    const storedDigest = storedDigests[bookId];
+
+    // 摘要缺失（首次运行或新书）→ 读一次，内容与摘要都存
+    if (!currentDigest) {
       try {
         const content = await getBookContent(bookId);
+        readsUsed++;
+        if (content) {
+          currentDigest = computeBookContentDigest(content);
+          digestUpdates[bookId] = currentDigest;
+          // 摘要与上次不同 → 直接复用这次读出的内容放入 changed
+          if (currentDigest !== storedDigest) {
+            changed[bookId] = content;
+          }
+        } else {
+          currentDigest = 'missing';
+        }
+      } catch {
+        currentDigest = 'error';
+      }
+      continue;
+    }
+
+    // 有摘要、但摘要变化 → 读内容放入 changed
+    if (currentDigest !== storedDigest) {
+      // 'empty' 摘要可能是新书（内容为空），跳过
+      if (currentDigest === 'empty' && !storedDigest) continue;
+
+      try {
+        const content = await getBookContent(bookId);
+        readsUsed++;
         if (content) {
           changed[bookId] = content;
+          // 重新计算摘要（可能 readerState 等变了）
+          const freshDigest = computeBookContentDigest(content);
+          if (freshDigest !== currentDigest) {
+            digestUpdates[bookId] = freshDigest;
+          }
         }
       } catch (e: any) {
         console.warn('[摘要] 读取变化书籍内容失败:', bookId, e?.message || e);
@@ -517,13 +544,38 @@ export const getChangedBookContents = async (): Promise<{
     }
   }
 
+  // 标记已删除的书
   for (const bookId of Object.keys(storedDigests)) {
-    if (!(bookId in currentDigests)) {
+    if (!bookIds.includes(bookId)) {
+      digestUpdates[bookId] = 'deleted';
+    }
+  }
+
+  // 持久化本轮新填充的摘要
+  if (Object.keys(digestUpdates).length > 0) {
+    const merged = { ...currentDigests, ...digestUpdates };
+    try { storeAllCurrentBookDigests(merged); } catch { /* ignore */ }
+  }
+
+  // 构建 allDigests
+  const allDigests: Record<string, string> = { ...currentDigests, ...digestUpdates };
+  for (const bookId of bookIds) {
+    if (!(bookId in allDigests)) {
+      allDigests[bookId] = currentDigests[bookId] || 'pending';
+    }
+  }
+  for (const bookId of Object.keys(storedDigests)) {
+    if (!(bookId in allDigests)) {
       allDigests[bookId] = 'deleted';
     }
   }
 
-  console.log('[摘要] 增量模式: 检查=' + checkedCount + ' 变化=' + changedCount + ' IndexedDB读取=' + Object.keys(changed).length);
+  console.log(
+    '[摘要] 本轮读取=' + readsUsed +
+    ' 变化=' + Object.keys(changed).length +
+    ' 摘要覆盖=' + Object.keys(allDigests).length +
+    '/' + bookIds.length
+  );
   return { changed, allDigests };
 };
 

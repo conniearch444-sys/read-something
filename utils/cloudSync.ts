@@ -11,7 +11,7 @@ const VERSION_KEY = 'app_cloud_sync_version';
 const LAST_UPLOAD_KEY = 'app_cloud_last_upload';
 const LAST_UPLOAD_DIGEST_KEY = 'last_upload_digest';
 const LAST_RESTORE_TS_KEY = 'app_cloud_last_restore_ts';
-const AUTO_SYNC_INTERVAL = 5 * 60 * 1000; // 5 分钟自动备份
+const AUTO_SYNC_INTERVAL = 30 * 1000; // TODO 调试用30秒，修好后改回 5 * 60 * 1000
 const RESTORE_COOLDOWN = 10 * 60 * 1000; // 10 分钟内不重复 restore
 
 let autoSyncTimer: ReturnType<typeof setInterval> | null = null;
