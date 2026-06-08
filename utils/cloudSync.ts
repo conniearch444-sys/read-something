@@ -1,3 +1,4 @@
+// no-alert-v2
 import {
   createAppArchivePayload,
   restoreAppArchivePayload,
