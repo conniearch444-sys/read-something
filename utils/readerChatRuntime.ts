@@ -450,7 +450,10 @@ const queuePersistChatStore = (store: ReaderChatStore) => {
     });
 };
 
-export const getChatStoreDigest = (): string => {
+export const getChatStoreDigest = async (): Promise<string> => {
+  if (chatStoreHydrationPromise) {
+    await chatStoreHydrationPromise;
+  }
   const keys = Object.keys(chatStoreCache);
   let count = 0;
   let latest = 0;

@@ -316,7 +316,7 @@ export const createAppArchivePayload = async (since?: number): Promise<AppArchiv
   const bookContents = await getAllBookContents();
   const images = await exportAllImagesAsDataUrls();
   const chatStoreFull = await exportChatHistoryFromCache();
-  const chatStore: Record<string, unknown> = since
+  const chatStore: Record<string, unknown> = since !== undefined && since > 0
     ? filterChatStoreSince(chatStoreFull, since)
     : chatStoreFull;
   const ragModule = await import('./ragEngine');

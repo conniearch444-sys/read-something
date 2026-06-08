@@ -150,7 +150,7 @@ async function autoUpload(): Promise<void> {
   if (!isLoggedIn()) return;
   uploadingLock = true;
   try {
-    const digest = getChatStoreDigest();
+    const digest = await getChatStoreDigest();
     const lastDigest = localStorage.getItem('last_upload_digest');
     if (digest !== lastDigest) {
       const since = lastDigest ? Number(lastDigest.split('-')[1]) || 0 : 0;
