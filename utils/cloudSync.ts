@@ -8,7 +8,7 @@ const API_BASE = '/read-something/api';
 const TOKEN_KEY = 'app_cloud_token';
 const VERSION_KEY = 'app_cloud_sync_version';
 const LAST_UPLOAD_KEY = 'app_cloud_last_upload';
-const AUTO_SYNC_INTERVAL = 5 * 60 * 1000; // 5 分钟自动备份
+const AUTO_SYNC_INTERVAL = 30 * 1000; // 30 秒自动备份（调试中）
 
 let autoSyncTimer: ReturnType<typeof setInterval> | null = null;
 let uploadingLock = false;
@@ -145,24 +145,38 @@ export async function syncChatToHermes(): Promise<number> {
   }
 }
 
+function appendSyncLog(entry: string): void {
+  const key = 'sync_diag_log';
+  try {
+    const prev = JSON.parse(localStorage.getItem(key) || '[]');
+    prev.push({ t: new Date().toISOString(), msg: entry });
+    if (prev.length > 20) prev.shift();
+    localStorage.setItem(key, JSON.stringify(prev));
+  } catch {}
+}
+
 async function autoUpload(): Promise<void> {
-  if (uploadingLock) return;
-  if (!isLoggedIn()) return;
+  if (uploadingLock) { appendSyncLog('跳过：上一次上传未完成'); return; }
+  if (!isLoggedIn()) { appendSyncLog('跳过：未登录'); return; }
   uploadingLock = true;
   try {
     const digest = await getChatStoreDigest();
     const lastDigest = localStorage.getItem('last_upload_digest');
-    console.log('[云同步] digest=' + digest + ' lastDigest=' + lastDigest + ' match=' + (digest === lastDigest));
+    const localVer = getLocalSyncVersion();
+    appendSyncLog('检查: digest=' + digest + ' last=' + lastDigest + ' localVer=' + localVer);
     if (digest !== lastDigest) {
       const since = lastDigest ? Number(lastDigest.split('-')[1]) || 0 : 0;
-      await uploadArchive(since);
-      console.log('[云同步] 上传完成（增量）');
+      appendSyncLog('上传中 since=' + since + ' ...');
+      const newVer = await uploadArchive(since);
+      appendSyncLog('上传成功 ver=' + newVer);
       localStorage.setItem('last_upload_digest', digest);
+    } else {
+      appendSyncLog('跳过：digest 未变');
     }
     await syncChatToHermes();
     localStorage.setItem(LAST_UPLOAD_KEY, String(Date.now()));
   } catch (e: any) {
-    console.error('[云同步] autoUpload 失败: ' + (e?.message || e), e);
+    appendSyncLog('失败: ' + (e?.message || String(e)));
   } finally {
     uploadingLock = false;
   }

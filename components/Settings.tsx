@@ -1285,6 +1285,8 @@ const Settings: React.FC<SettingsProps> = ({
                 </div>
               )}
             </div>
+            {/* 同步诊断日志 */}
+            <SyncDiagLog />
             <div className="grid grid-cols-3 gap-3">
               <button
                 type="button"
