@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>同步诊断</title>
+  <style>
+    body { margin:20px; background:#0a0a0a; color:#0f0; font:14px/1.5 monospace; }
+    h1 { font-size:16px; color:#ff0; margin-bottom:16px; }
+    .entry { padding:4px 0; border-bottom:1px solid #222; }
+    .time { color:#888; }
+    .empty { color:#f60; }
+    .meta { color:#888; font-size:11px; margin:12px 0; }
+  </style>
+</head>
+<body>
+  <h1>📋 伴读同步诊断</h1>
+  <div id="log"></div>
+  <div class="meta">
+    <div>last_upload_digest: <span id="digest">—</span></div>
+    <div>local_version: <span id="localVer">—</span></div>
+    <div>app_cloud_token: <span id="hasToken">—</span></div>
+    <div>last_upload: <span id="lastUp">—</span></div>
+  </div>
+  <script>
+    var logEl = document.getElementById('log');
+    var last = '';
+    function refresh() {
+      var raw = localStorage.getItem('sync_diag_log');
+      if (!raw) { logEl.innerHTML = '<div class="empty">sync_diag_log 为空 — startAutoSync 尚未触发或 appendSyncLog 未调用</div>'; }
+      else if (raw !== last) {
+        last = raw;
+        var entries = JSON.parse(raw);
+        var h = '';
+        entries.forEach(function(e){ h += '<div class="entry"><span class="time">'+e.t.slice(11,19)+'</span> '+e.msg+'</div>'; });
+        logEl.innerHTML = h;
+      }
+      document.getElementById('digest').textContent = localStorage.getItem('last_upload_digest') || '(空)';
+      document.getElementById('localVer').textContent = localStorage.getItem('app_cloud_sync_version') || '(空)';
+      document.getElementById('hasToken').textContent = localStorage.getItem('app_cloud_token') ? '已登录' : '未登录';
+      document.getElementById('lastUp').textContent = localStorage.getItem('app_cloud_last_upload') || '(空)';
+    }
+    setInterval(refresh, 2000);
+    refresh();
+  </script>
+</body>
+</html>
