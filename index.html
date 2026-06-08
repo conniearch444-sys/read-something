@@ -75,6 +75,31 @@
   p.innerHTML='⏳ 脚本已运行('+hb+')，等待 sync_diag_log...';
 })();
 </script>
+<div id="sd" style="position:fixed;bottom:60px;left:10px;right:10px;z-index:2147483647;background:#000;color:#0f0;padding:8px 12px;font:12px/1.4 monospace;max-height:30vh;overflow-y:auto;opacity:0.95;border:2px solid #0f0;border-radius:8px">⏳ 等待...</div>
+<script>
+(function(){
+  var p=document.getElementById('sd');
+  var last='';
+  var origTitle=document.title;
+  function tick(){
+    var raw=localStorage.getItem('sync_diag_log');
+    if(raw && raw!==last){
+      last=raw;
+      var entries=JSON.parse(raw).slice(-4);
+      var h='<b>📋 同步诊断</b><br>';
+      entries.forEach(function(e){h+='<span style=color:#888>'+e.t.slice(11,19)+'</span> '+e.msg+'<br>';});
+      p.innerHTML=h;
+      // Update title with latest
+      var latest=entries[entries.length-1];
+      document.title=latest.t.slice(11,19)+' '+latest.msg;
+    } else if(!raw){
+      p.innerHTML='⏳ 等待同步触发... (日志为空)';
+    }
+  }
+  setInterval(tick,2000);
+  tick();
+})();
+</script>
 </body>
 </html>
 
