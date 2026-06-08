@@ -31,6 +31,30 @@
   <body>
     <div id="root"></div>
   <script type="module" src="index.tsx"></script>
+  <div id="sync-diag-panel" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:99999;background:#fffbeb;border-top:2px solid #f59e0b;padding:8px 12px;max-height:30vh;overflow-y:auto;font-size:11px;font-family:monospace;color:#92400e;line-height:1.5"></div>
+  <script>
+    (function(){
+      var panel = document.getElementById('sync-diag-panel');
+      var lastLen = 0;
+      setInterval(function(){
+        try {
+          var raw = localStorage.getItem('sync_diag_log');
+          var entries = raw ? JSON.parse(raw) : [];
+          if (entries.length === 0) { panel.style.display = 'none'; lastLen = 0; return; }
+          if (entries.length === lastLen) return;
+          lastLen = entries.length;
+          var recent = entries.slice(-6);
+          var html = '<div style="font-weight:bold;margin-bottom:4px">📋 同步诊断 (30s/次)</div>';
+          recent.forEach(function(e){
+            html += '<div><span style="color:#d97706">' + e.t.slice(11,19) + '</span> ' + e.msg + '</div>';
+          });
+          panel.innerHTML = html;
+          panel.style.display = 'block';
+        } catch(ex){}
+      }, 2000);
+    })();
+  </script>
+
 </body>
 </html>
 
