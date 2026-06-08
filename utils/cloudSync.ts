@@ -152,6 +152,7 @@ async function autoUpload(): Promise<void> {
   try {
     const digest = await getChatStoreDigest();
     const lastDigest = localStorage.getItem('last_upload_digest');
+    console.log('[云同步] digest=' + digest + ' lastDigest=' + lastDigest + ' match=' + (digest === lastDigest));
     if (digest !== lastDigest) {
       const since = lastDigest ? Number(lastDigest.split('-')[1]) || 0 : 0;
       await uploadArchive(since);
@@ -160,8 +161,8 @@ async function autoUpload(): Promise<void> {
     }
     await syncChatToHermes();
     localStorage.setItem(LAST_UPLOAD_KEY, String(Date.now()));
-  } catch {
-    // Network error, ignore silently
+  } catch (e: any) {
+    console.error('[云同步] autoUpload 失败: ' + (e?.message || e), e);
   } finally {
     uploadingLock = false;
   }
