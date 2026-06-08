@@ -183,11 +183,14 @@ async function autoUpload(): Promise<void> {
 }
 
 export function startAutoSync(): void {
+  appendSyncLog('startAutoSync 调用, loggedIn=' + isLoggedIn());
   console.log('[Hermes同步] startAutoSync 调用, loggedIn=' + isLoggedIn());
   if (!isLoggedIn()) {
+    appendSyncLog('startAutoSync 跳过：未登录');
     console.log('[Hermes同步] startAutoSync 跳过：未登录');
     return;
   }
+  appendSyncLog('自动同步已启动, 间隔30s');
 
   // Auto-upload every AUTO_SYNC_INTERVAL
   if (autoSyncTimer) clearInterval(autoSyncTimer);
