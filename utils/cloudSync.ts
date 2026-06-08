@@ -175,11 +175,9 @@ async function autoUpload(): Promise<void> {
     }
     await syncChatToHermes();
     localStorage.setItem(LAST_UPLOAD_KEY, String(Date.now()));
-    alert('[诊断] 上传成功 ver=' + localStorage.getItem('app_cloud_sync_version'));
   } catch (e: any) {
     var errMsg = '失败: ' + (e?.message || String(e));
     appendSyncLog(errMsg);
-    alert('[诊断] ' + errMsg);
   } finally {
     uploadingLock = false;
   }
@@ -188,15 +186,12 @@ async function autoUpload(): Promise<void> {
 export function startAutoSync(): void {
   var started = 'startAutoSync 调用, loggedIn=' + isLoggedIn();
   appendSyncLog(started);
-  alert('[诊断] ' + started);
   if (!isLoggedIn()) {
     var skipMsg = 'startAutoSync 跳过：未登录';
     appendSyncLog(skipMsg);
-    alert('[诊断] ' + skipMsg);
     return;
   }
   appendSyncLog('自动同步已启动, 间隔30s');
-  alert('[诊断] 自动同步已启动, 间隔30s, isLoggedIn=true');
 
   // Auto-upload every AUTO_SYNC_INTERVAL
   if (autoSyncTimer) clearInterval(autoSyncTimer);
